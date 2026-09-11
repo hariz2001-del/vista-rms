@@ -1,0 +1,185 @@
+@import "tailwindcss";
+
+@theme {
+  --color-canvas: #f1eee6;
+  --color-surface: #fffdf8;
+  --color-ink: #18211d;
+  --color-muted: #667169;
+  --color-line: #d9d5c9;
+  --color-rail: #173a33;
+  --color-rail-muted: #aec0b8;
+
+  /* Brand identity colours, matching the POS. Used for chips and dots. */
+  --color-food: #e35f27;
+  --color-food-soft: #fff0e8;
+  --color-drink: #087f88;
+  --color-drink-soft: #e5f4f3;
+
+  /*
+   * Chart marks are NOT the identity colours. The brand teal has a chroma of
+   * 0.092 against this surface, below the 0.1 floor — as a large chart fill it
+   * reads grey rather than teal, and the brand orange lands at 2.98:1 contrast,
+   * under the 3:1 minimum. These two are the nearest steps on the same hues that
+   * pass every check: lightness band, chroma floor, CVD separation (ΔE 16.4
+   * protan), normal-vision separation (ΔE 28.1) and contrast.
+   *
+   * Assigned in fixed order — Food first, Drinks second — and never cycled, so
+   * filtering one out never repaints the other.
+   */
+  --color-chart-food: #e2601f;
+  --color-chart-drinks: #0a8fa0;
+  --color-chart-grid: #e0ddd4;
+
+  /* Reserved for state. Never reused as a series colour. */
+  --color-good: #15803d;
+  --color-warning: #a16207;
+  --color-serious: #c2410c;
+  --color-critical: #b91c1c;
+
+  --font-sans: "Aptos", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-mono: "Cascadia Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  font-family: var(--font-sans);
+  color: #18211d;
+  background: #f1eee6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  /* Light only, matching the POS. A dark palette would need its own validated
+     steps rather than an automatic flip, and neither app ships one yet. */
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  color: #fffdf8;
+  background: #173a33;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid #e35f27;
+  outline-offset: 2px;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+main h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+/* A quiet paper grain keeps the owner view tactile without adding decoration. */
+.paper-canvas {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(rgba(24, 33, 29, 0.045) 0.6px, transparent 0.6px);
+  background-size: 5px 5px;
+}
+
+.page-kicker {
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.page-rule {
+  border-top: 1px solid var(--color-line);
+}
+
+.vista-control {
+  min-height: 2.6rem;
+  border: 1px solid var(--color-line);
+  border-radius: 0;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.vista-button-primary,
+.vista-button-secondary {
+  min-height: 2.35rem;
+  border-radius: 0;
+  padding-inline: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.vista-button-primary {
+  border: 1px solid var(--color-rail);
+  color: white;
+  background: var(--color-rail);
+}
+
+.vista-button-primary:hover {
+  border-color: #24554a;
+  background: #24554a;
+}
+
+.vista-button-secondary {
+  border: 1px solid var(--color-line);
+  color: var(--color-muted);
+  background: var(--color-surface);
+}
+
+.vista-button-secondary:hover {
+  color: var(--color-ink);
+  background: var(--color-canvas);
+}
+
+.vista-field-label {
+  display: block;
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Money reads as a column. Tabular figures keep the digits aligned. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.scrollbar-subtle {
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}

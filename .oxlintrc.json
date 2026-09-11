@@ -1,0 +1,10 @@
+{
+  "categories": { "correctness": "error", "suspicious": "warn", "perf": "warn" },
+  "env": { "browser": true, "es2024": true },
+  "rules": {
+    "oxc/no-map-spread": "off",
+    "eslint/no-unmodified-loop-condition": "off",
+    "unicorn/consistent-function-scoping": "off"
+  },
+  "ignorePatterns": ["node_modules", "dist"]
+}
