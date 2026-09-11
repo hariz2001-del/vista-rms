@@ -145,6 +145,26 @@ export type Expense = {
 }
 
 // ---------------------------------------------------------------------------
+// Live counter state
+// ---------------------------------------------------------------------------
+
+/**
+ * What the owner can know about the tablet right now.
+ *
+ * None of this exists on the server yet — there is no heartbeat endpoint and no
+ * failure reporting from the device. The shape is here so the banner can be
+ * built and reviewed, and so the eventual `/status` endpoint has a target.
+ */
+export type TerminalStatus = {
+  /** ISO timestamp of the last contact from the tablet. Null means never. */
+  lastSeenAt: string | null
+  /** Consecutive 5xx or timeout responses the tablet has reported. */
+  consecutiveSyncFailures: number
+  /** Sales the tablet is still holding locally. */
+  unsentSaleCount: number
+}
+
+// ---------------------------------------------------------------------------
 // Partners
 // ---------------------------------------------------------------------------
 

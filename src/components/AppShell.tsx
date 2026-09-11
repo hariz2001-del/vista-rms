@@ -45,6 +45,8 @@ type Props = {
   businessName: string
   outletName: string
   attentionCount: number
+  /** Rendered above the content, pinned across every screen. */
+  banner?: ReactNode
   children: ReactNode
 }
 
@@ -54,6 +56,7 @@ export function AppShell({
   businessName,
   outletName,
   attentionCount,
+  banner,
   children,
 }: Props) {
   return (
@@ -120,6 +123,8 @@ export function AppShell({
             <p className="truncate text-xs font-bold">{outletName}</p>
           </div>
         </header>
+
+        {banner}
 
         <main className="flex-1 p-4 pb-24 sm:p-7 lg:px-10 lg:py-8 xl:px-12">{children}</main>
 

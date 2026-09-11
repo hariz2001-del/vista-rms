@@ -1,4 +1,4 @@
-import type { AccountSettings, Expense, LedgerEntry, Order } from './types.ts'
+import type { AccountSettings, Expense, LedgerEntry, Order, PeriodClosure } from './types.ts'
 
 /**
  * The partner settlement maths.
@@ -75,8 +75,27 @@ export type SettlementSummary = {
   /** Out-of-pocket money each partner is being reimbursed in this settlement. */
   foodAdvancesSen: number
   drinksAdvancesSen: number
+  /** Cash each partner already took during the period. Deducted from the payout. */
+  foodDrawingsSen: number
+  drinksDrawingsSen: number
   foodPayoutSen: number
   drinksPayoutSen: number
+  /** What actually has to move when this is settled. See `transferInstruction`. */
+  transfer: TransferInstruction
+}
+
+/**
+ * The single sentence a settlement has to end with.
+ *
+ * The stall's bank account is operated by the host, so settling does not mean
+ * two transfers out of a neutral account — it means the host pays the Food
+ * partner what they are owed and retains their own share. If Food's payout
+ * lands at or below zero there is nothing to send.
+ */
+export type TransferInstruction = {
+  /** Positive: host → Food. Negative: Food owes the stall. Zero: nothing moves. */
+  amountSen: number
+  direction: 'HOST_PAYS_FOOD' | 'FOOD_OWES_HOST' | 'NOTHING'
 }
 
 type SettlementInput = {
@@ -92,6 +111,12 @@ type SettlementInput = {
    * settled, so this is an outstanding balance, not a window.
    */
   outstandingAdvances: readonly Expense[]
+  /**
+   * Ledger entries for the period. Only `OWNER_DRAWING` rows are read: cash a
+   * partner already took mid-period, which must come off what they are paid at
+   * settlement or the same money leaves the business twice.
+   */
+  ledger: readonly LedgerEntry[]
 }
 
 /**
@@ -112,6 +137,44 @@ function advancesFor(expenses: readonly Expense[], paidBy: Expense['paidBy']): n
   return expenses
     .filter((expense) => expense.paidBy === paidBy && !expense.isSettled)
     .reduce((sum, expense) => sum + expense.amountSen, 0)
+}
+
+/**
+ * Cash a partner already took out during the period.
+ *
+ * A drawing is not an operating expense — it never touches either brand's
+ * result — but it is money that has already left the bank and reached that
+ * partner. Settling their full share on top of it would pay the same money out
+ * twice, so it is deducted here and nowhere else.
+ */
+function drawingsFor(ledger: readonly LedgerEntry[], brandId: string): number {
+  return ledger
+    .filter((entry) => entry.category === 'OWNER_DRAWING' && entry.brandId === brandId)
+    .reduce((sum, entry) => sum + entry.amountSen, 0)
+}
+
+/**
+ * The deficit a period starts with: whatever the previous closure left unpaid.
+ *
+ * Read from the closure chain rather than recomputed, so a locked period's
+ * figures stay exactly as both partners agreed them. Periods that have never
+ * been closed start from zero.
+ */
+export function openingDeficitFor(
+  closures: readonly PeriodClosure[],
+  startDate: string,
+): number {
+  const previous = closures
+    .filter((closure) => closure.endDate < startDate)
+    .toSorted((a, b) => a.endDate.localeCompare(b.endDate))
+    .at(-1)
+  return previous?.closingIouSen ?? 0
+}
+
+function transferInstruction(foodPayoutSen: number): TransferInstruction {
+  if (foodPayoutSen > 0) return { amountSen: foodPayoutSen, direction: 'HOST_PAYS_FOOD' }
+  if (foodPayoutSen < 0) return { amountSen: -foodPayoutSen, direction: 'FOOD_OWES_HOST' }
+  return { amountSen: 0, direction: 'NOTHING' }
 }
 
 function brandFinancials(
@@ -188,10 +251,19 @@ export function settlePeriod(input: SettlementInput): SettlementSummary {
   const foodAdvancesSen = advancesFor(input.outstandingAdvances, 'PARTNER_FOOD')
   const drinksAdvancesSen = advancesFor(input.outstandingAdvances, 'PARTNER_DRINKS')
 
+  const foodDrawingsSen = drawingsFor(input.ledger, input.foodBrandId)
+  const drinksDrawingsSen = drawingsFor(input.ledger, input.drinksBrandId)
+
   // Floored at zero: a loss carries forward as the IOU above rather than being
   // billed to the partner in cash. Without the floor the same loss would be
   // counted twice — once as a negative payout and again as a carried deficit.
   const foodShareSen = Math.max(0, offsetResultSen - hostCommissionSen)
+
+  // Drawings are NOT floored. Drawing more than you earned leaves you owing the
+  // stall, and hiding that behind a zero would quietly write the difference off.
+  const foodPayoutSen = foodShareSen + foodAdvancesSen - foodDrawingsSen
+  const drinksPayoutSen =
+    drinks.netResultSen + hostCommissionSen + drinksAdvancesSen - drinksDrawingsSen
 
   return {
     food,
@@ -203,9 +275,12 @@ export function settlePeriod(input: SettlementInput): SettlementSummary {
     closingIouSen,
     foodAdvancesSen,
     drinksAdvancesSen,
-    foodPayoutSen: foodShareSen + foodAdvancesSen,
+    foodDrawingsSen,
+    drinksDrawingsSen,
+    foodPayoutSen,
     // The host is the Drinks partner: they keep all of Drinks and take the cut.
-    drinksPayoutSen: drinks.netResultSen + hostCommissionSen + drinksAdvancesSen,
+    drinksPayoutSen,
+    transfer: transferInstruction(foodPayoutSen),
   }
 }
 

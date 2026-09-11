@@ -1,16 +1,16 @@
-import { ArrowRight, HandCoins, Lock } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Banknote, HandCoins, Lock } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Badge, Panel, SectionHeading } from '../components/primitives.tsx'
+import { Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
-import { settlePeriod } from '../domain/finance.ts'
+import { openingDeficitFor, settlePeriod } from '../domain/finance.ts'
 import { formatRinggit } from '../domain/money.ts'
 import {
   formatDate,
-  formatMonth,
-  inMonth,
+  formatRange,
+  inRange,
   monthOf,
-  monthsIn,
   partnerAdvances,
+  rangePresets,
 } from '../domain/selectors.ts'
 
 function WorkingRow({
@@ -45,34 +45,84 @@ function WorkingRow({
 export function SettlementScreen({ store }: { store: VistaStore }) {
   const foodBrand = store.brands[0]
   const drinksBrand = store.brands[1]
-  const months = useMemo(() => monthsIn(store.orders), [store.orders])
-  const [month, setMonth] = useState(() => monthOf(store.today))
+
+  const presets = useMemo(() => rangePresets(store.today), [store.today])
+  const [range, setRange] = useState(
+    () => presets[0]?.range ?? { startDate: store.today, endDate: store.today },
+  )
 
   const summary = useMemo(() => {
     if (!foodBrand || !drinksBrand) return null
     return settlePeriod({
-      orders: inMonth(store.orders, month),
-      expenses: inMonth(store.expenses, month),
-      // Not scoped to the month: an unreimbursed advance from an earlier period
+      orders: inRange(store.orders, range.startDate, range.endDate),
+      expenses: inRange(store.expenses, range.startDate, range.endDate),
+      // Not scoped to the range: an unreimbursed advance from an earlier period
       // is still owed, and settling without it would leave the partner short.
       outstandingAdvances: store.expenses,
+      // Drawings the partners already took inside this window.
+      ledger: inRange(store.ledger, range.startDate, range.endDate),
       settings: store.settings,
       foodBrandId: foodBrand.id,
       drinksBrandId: drinksBrand.id,
-      // No month has been closed yet, so nothing is carried in. Once period
-      // closure exists this reads the previous closure's closing balance.
-      openingIouSen: 0,
+      // Read from the closure chain, so a locked period's figures stay exactly
+      // as both partners agreed them.
+      openingIouSen: openingDeficitFor(store.closures, range.startDate),
     })
-  }, [store.orders, store.expenses, store.settings, foodBrand, drinksBrand, month])
+  }, [
+    store.orders,
+    store.expenses,
+    store.ledger,
+    store.closures,
+    store.settings,
+    foodBrand,
+    drinksBrand,
+    range,
+  ])
 
-  const advances = useMemo(
-    () => partnerAdvances(store.expenses),
-    [store.expenses],
+  const [confirming, setConfirming] = useState(false)
+  const advances = useMemo(() => partnerAdvances(store.expenses), [store.expenses])
+
+  /**
+   * Reasons this period cannot be frozen yet.
+   *
+   * Locking over an unreconciled shift or an unresolved flag would bake a figure
+   * already known to be wrong into a snapshot both partners are paid against.
+   */
+  const blockers = useMemo(() => {
+    const reasons: string[] = []
+    const shifts = inRange(store.shifts, range.startDate, range.endDate)
+    const orders = inRange(store.orders, range.startDate, range.endDate)
+
+    const open = shifts.filter((shift) => shift.closedAt === null).length
+    const unreconciled = shifts.filter(
+      (shift) => shift.reconciliationStatus === 'UNRECONCILED',
+    ).length
+    const flagged = orders.filter((order) => order.flagStatus === 'FLAGGED').length
+    const review = orders.filter((order) => order.needsReview).length
+
+    if (open > 0) reasons.push(`${open} shift still open`)
+    if (unreconciled > 0) reasons.push(`${unreconciled} shift with an unexplained bank difference`)
+    if (flagged > 0) reasons.push(`${flagged} sale still flagged by the cashier`)
+    if (review > 0) reasons.push(`${review} sale awaiting a price review`)
+    return reasons
+  }, [store.shifts, store.orders, range])
+
+  const alreadyClosed = useMemo(
+    () =>
+      store.closures.some(
+        (closure) =>
+          closure.startDate === range.startDate && closure.endDate === range.endDate,
+      ),
+    [store.closures, range],
   )
 
   if (!summary || !foodBrand || !drinksBrand) return null
 
-  const isMonthOver = month < monthOf(store.today)
+  const isCurrentPeriod = monthOf(range.endDate) === monthOf(store.today)
+  const foodPartnerName =
+    store.partners.find((partner) => partner.brandId === foodBrand.id)?.name ?? foodBrand.name
+  const drinksPartnerName =
+    store.partners.find((partner) => partner.brandId === drinksBrand.id)?.name ?? drinksBrand.name
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -81,20 +131,49 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
           <p className="page-kicker">Partner working / period close</p>
           <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Settlement</h1>
           <p className="mt-2 text-sm text-muted">
-            {isMonthOver ? formatMonth(month) : `${formatMonth(month)} so far — still running`}
+            {formatRange(range)}
+            {isCurrentPeriod ? ' · still running' : ''}
           </p>
         </div>
-        <select
-          value={month}
-          onChange={(event) => setMonth(event.target.value)}
-          className="vista-control px-3"
-        >
-          {months.map((value) => (
-            <option key={value} value={value}>
-              {formatMonth(value)}
-            </option>
-          ))}
-        </select>
+
+        <div className="flex flex-wrap items-end gap-2">
+          {presets.map((preset) => {
+            const isActive =
+              preset.range.startDate === range.startDate && preset.range.endDate === range.endDate
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => setRange(preset.range)}
+                className={`min-h-11 border px-3 text-sm font-bold ${
+                  isActive ? 'border-rail bg-rail text-white' : 'border-line bg-surface text-slate-700'
+                }`}
+              >
+                {preset.label}
+              </button>
+            )
+          })}
+          <label className="flex flex-col gap-1">
+            <span className="vista-field-label">From</span>
+            <input
+              type="date"
+              value={range.startDate}
+              max={range.endDate}
+              onChange={(event) => setRange({ ...range, startDate: event.target.value })}
+              className="vista-control px-2"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="vista-field-label">To</span>
+            <input
+              type="date"
+              value={range.endDate}
+              min={range.startDate}
+              onChange={(event) => setRange({ ...range, endDate: event.target.value })}
+              className="vista-control px-2"
+            />
+          </label>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -186,6 +265,9 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
             {summary.foodAdvancesSen > 0
               ? `, plus ${formatRinggit(summary.foodAdvancesSen)} reimbursed`
               : ''}
+            {summary.foodDrawingsSen > 0
+              ? `, less ${formatRinggit(summary.foodDrawingsSen)} already drawn`
+              : ''}
           </p>
         </Panel>
         <Panel className="border-t-4" style={{ borderTopColor: drinksBrand.colour }}>
@@ -200,6 +282,9 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
             {formatRinggit(summary.hostCommissionSen)} host cut
             {summary.drinksAdvancesSen > 0
               ? `, plus ${formatRinggit(summary.drinksAdvancesSen)} reimbursed`
+              : ''}
+            {summary.drinksDrawingsSen > 0
+              ? `, less ${formatRinggit(summary.drinksDrawingsSen)} already drawn`
               : ''}
           </p>
         </Panel>
@@ -249,19 +334,138 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
         )}
       </Panel>
 
-      <Panel className="bg-slate-50">
+      {/* The sentence a settlement has to end with. Two payout figures are a
+          calculation; this is an instruction someone can actually act on. */}
+      <Panel className="border-t-4" style={{ borderTopColor: 'var(--color-rail)' }}>
+        <div className="flex flex-wrap items-center gap-3">
+          <Banknote aria-hidden="true" className="size-5 shrink-0 text-muted" />
+          <div className="min-w-0 flex-1">
+            <p className="vista-field-label">To settle this period</p>
+            {summary.transfer.direction === 'HOST_PAYS_FOOD' ? (
+              <p className="mt-1 text-lg font-black">
+                {drinksPartnerName} transfers{' '}
+                <span className="tabular">{formatRinggit(summary.transfer.amountSen)}</span> to{' '}
+                {foodPartnerName}
+              </p>
+            ) : summary.transfer.direction === 'FOOD_OWES_HOST' ? (
+              <p className="mt-1 text-lg font-black">
+                {foodPartnerName} owes the stall{' '}
+                <span className="tabular">{formatRinggit(summary.transfer.amountSen)}</span>
+              </p>
+            ) : (
+              <p className="mt-1 text-lg font-black">Nothing moves — no payout is due.</p>
+            )}
+            <p className="mt-1 text-xs text-muted">
+              The stall account is held by the host, so only the {foodBrand.name} payout leaves
+              it. {drinksBrand.name}&apos;s share is already there.
+            </p>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="bg-canvas">
         <div className="flex flex-wrap items-center gap-3">
           <Lock aria-hidden="true" className="size-5 shrink-0 text-muted" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black">Close {formatMonth(month)}</p>
-            <p className="text-xs font-semibold text-muted">
-              Freezes these figures permanently. Needs both partners to sign off, and refuses while
-              any shift is unreconciled or any sale is still flagged.
+            <p className="text-sm font-black">Lock &amp; settle {formatRange(range)}</p>
+            <p className="text-xs text-muted">
+              Freezes these figures permanently, marks everything in the window settled, and
+              carries any unrecovered deficit into the next period.
             </p>
           </div>
-          <Badge tone="neutral">Not built yet</Badge>
+
+          {alreadyClosed ? (
+            <span className="border border-good px-3 py-2 text-xs font-bold text-good">
+              Already settled
+            </span>
+          ) : (
+            <button
+              type="button"
+              disabled={blockers.length > 0}
+              onClick={() => setConfirming(true)}
+              className="vista-button-primary min-h-11 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Lock &amp; Settle Period
+            </button>
+          )}
         </div>
+
+        {blockers.length > 0 && !alreadyClosed ? (
+          <div className="mt-3 flex gap-2 border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-warning">
+            <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p>Cannot settle yet — these would be frozen at a figure already known to be wrong:</p>
+              <ul className="mt-1 list-disc pl-4 font-semibold">
+                {blockers.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
       </Panel>
+
+      {confirming ? (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-settle"
+        >
+          <div className="w-full max-w-md border border-line bg-surface p-6 shadow-2xl">
+            <h2 id="confirm-settle" className="text-xl font-black">
+              Settle {formatRange(range)}?
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              This cannot be undone. The figures below are frozen and every order and expense in
+              the window is locked.
+            </p>
+
+            <dl className="mt-4 divide-y divide-line border-y border-line text-sm">
+              <div className="flex justify-between py-2">
+                <dt className="text-muted">{foodBrand.name} takes</dt>
+                <dd className="font-black tabular">{formatRinggit(summary.foodPayoutSen)}</dd>
+              </div>
+              <div className="flex justify-between py-2">
+                <dt className="text-muted">{drinksBrand.name} takes</dt>
+                <dd className="font-black tabular">{formatRinggit(summary.drinksPayoutSen)}</dd>
+              </div>
+              <div className="flex justify-between py-2">
+                <dt className="text-muted">Host cut</dt>
+                <dd className="font-black tabular">{formatRinggit(summary.hostCommissionSen)}</dd>
+              </div>
+              {summary.closingIouSen > 0 ? (
+                <div className="flex justify-between py-2">
+                  <dt className="text-muted">Deficit carried forward</dt>
+                  <dd className="font-black tabular text-warning">
+                    {formatRinggit(summary.closingIouSen)}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                className="vista-button-secondary min-h-12"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  store.closePeriod(range.startDate, range.endDate, summary)
+                  setConfirming(false)
+                }}
+                className="vista-button-primary min-h-12"
+              >
+                Lock it
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

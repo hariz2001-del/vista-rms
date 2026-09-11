@@ -6,6 +6,7 @@ import type {
   Partner,
   PeriodClosure,
   Shift,
+  TerminalStatus,
 } from '../../domain/types.ts'
 import { BRAND_DRINKS, BRAND_FOOD, PRODUCTS } from './catalogue.ts'
 
@@ -64,6 +65,7 @@ function weekday(date: string): number {
 }
 
 export type FakeHistory = {
+  terminal: TerminalStatus
   shifts: Shift[]
   orders: Order[]
   ledger: LedgerEntry[]
@@ -247,6 +249,23 @@ export function generateHistory(): FakeHistory {
       }
     }
 
+    // The final trading day is left OPEN so the status banner has a live shift
+    // to report. Every earlier one is closed and reconciled as normal.
+    const isCurrent = businessDate === tradingDates.at(-1)
+    if (isCurrent) {
+      shifts.push({
+        id: shiftId,
+        businessDate,
+        openedAt: `${businessDate}T12:04:00Z`,
+        closedAt: null,
+        systemNetSalesSen: null,
+        declaredBankTotalSen: null,
+        varianceSen: null,
+        reconciliationStatus: 'NOT_REQUIRED',
+      })
+      continue
+    }
+
     const isUnreconciled = businessDate === unreconciledDate
     const declared = isUnreconciled ? dayNetSen - 1_850 : dayNetSen
     shifts.push({
@@ -423,5 +442,13 @@ export function generateHistory(): FakeHistory {
     { id: 'partner-drinks', name: 'Iman', brandId: BRAND_DRINKS, role: 'STALL_HOST' },
   ]
 
-  return { shifts, orders, ledger, expenses, partners, closures: [], tradingDates }
+  // Heartbeat is relative to real time rather than the fixed demo date, so the
+  // banner shows a plausible live state whenever the app is opened.
+  const terminal: TerminalStatus = {
+    lastSeenAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+    consecutiveSyncFailures: 0,
+    unsentSaleCount: 0,
+  }
+
+  return { terminal, shifts, orders, ledger, expenses, partners, closures: [], tradingDates }
 }

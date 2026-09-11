@@ -6,10 +6,12 @@ import type {
   LedgerEntry,
   Order,
   PaymentSource,
+  PeriodClosure,
   Product,
   Shift,
+  TerminalStatus,
 } from '../domain/types.ts'
-import { splitShared } from '../domain/finance.ts'
+import { splitShared, type SettlementSummary } from '../domain/finance.ts'
 import { ACCOUNT, BRANDS, CATEGORIES, HISTORY, PRODUCTS, TODAY } from './fake/index.ts'
 
 /**
@@ -38,6 +40,8 @@ export function useVistaStore() {
   const [expenses, setExpenses] = useState<Expense[]>(HISTORY.expenses)
   const [ledger, setLedger] = useState<LedgerEntry[]>(HISTORY.ledger)
   const [products, setProducts] = useState<Product[]>(PRODUCTS)
+  const [closures, setClosures] = useState<PeriodClosure[]>(HISTORY.closures)
+  const [terminal, setTerminal] = useState<TerminalStatus>(HISTORY.terminal)
 
   const addExpense = useCallback(
     (input: NewExpense) => {
@@ -206,6 +210,92 @@ export function useVistaStore() {
     [expenses],
   )
 
+  /**
+   * Freeze a settlement period.
+   *
+   * Writes the snapshot both partners agreed, marks everything inside the window
+   * locked, and rolls any unrecovered deficit forward as the next period's
+   * opening balance. Refuses while anything in the window is still undecided —
+   * closing over an unreconciled shift or an unresolved flag would bake a figure
+   * that is already known to be wrong.
+   */
+  const closePeriod = useCallback(
+    (startDate: string, endDate: string, summary: SettlementSummary) => {
+      setClosures((current) => [
+        ...current,
+        {
+          id: `${startDate}..${endDate}`,
+          startDate,
+          endDate,
+          closedAt: new Date().toISOString(),
+          foodNetSalesSen: summary.food.netSalesSen,
+          foodDirectExpensesSen: summary.food.directExpensesSen,
+          foodOverheadShareSen: summary.food.sharedOverheadShareSen,
+          foodNetResultSen: summary.food.netResultSen,
+          openingIouSen: summary.openingIouSen,
+          hostCommissionSen: summary.hostCommissionSen,
+          closingIouSen: summary.closingIouSen,
+        },
+      ])
+
+      const inWindow = (businessDate: string) =>
+        businessDate >= startDate && businessDate <= endDate
+
+      setOrders((current) =>
+        current.map((order) => (inWindow(order.businessDate) ? { ...order, isLocked: true } : order)),
+      )
+      setExpenses((current) =>
+        current.map((expense) =>
+          inWindow(expense.businessDate) ? { ...expense, isLocked: true } : expense,
+        ),
+      )
+      // Settling pays out every outstanding advance, so none carry into the next
+      // period as still owed.
+      setExpenses((current) =>
+        current.map((expense) =>
+          expense.paidBy === 'STALL_FUNDS' ? expense : { ...expense, isSettled: true },
+        ),
+      )
+    },
+    [],
+  )
+
+  /**
+   * Close the counter from the dashboard.
+   *
+   * Only closes the database shift. Remotely locking the tablet back to its PIN
+   * screen needs a push channel to the device, which the offline-first design
+   * deliberately does not have — see VISTA-CORE-SPEC.md §15.
+   */
+  const forceCloseShift = useCallback(
+    (shiftId: string) => {
+      const shiftOrders = orders.filter((order) => order.shiftId === shiftId)
+      const systemNetSalesSen = shiftOrders.reduce((sum, order) => sum + order.totalAmountSen, 0)
+      setShifts((current) =>
+        current.map((shift) =>
+          shift.id === shiftId
+            ? {
+                ...shift,
+                closedAt: new Date().toISOString(),
+                systemNetSalesSen,
+                // Nobody declared a bank total, so there is nothing to compare
+                // against and the shift stays unreconciled until the owner does.
+                declaredBankTotalSen: null,
+                varianceSen: null,
+                reconciliationStatus: 'UNRECONCILED' as const,
+              }
+            : shift,
+        ),
+      )
+    },
+    [orders],
+  )
+
+  /** Dev-only: preview each banner state without waiting for real conditions. */
+  const simulateTerminal = useCallback((patch: Partial<TerminalStatus>) => {
+    setTerminal((current) => ({ ...current, ...patch }))
+  }, [])
+
   const toggleSoldOut = useCallback((productId: string) => {
     setProducts((current) =>
       current.map((product) =>
@@ -232,7 +322,12 @@ export function useVistaStore() {
       expenses,
       ledger,
       partners: HISTORY.partners,
+      closures,
+      terminal,
       today: TODAY,
+      closePeriod,
+      forceCloseShift,
+      simulateTerminal,
       addExpense,
       resolveFlag,
       clearReview,
@@ -248,6 +343,11 @@ export function useVistaStore() {
       shifts,
       expenses,
       ledger,
+      closures,
+      terminal,
+      closePeriod,
+      forceCloseShift,
+      simulateTerminal,
       addExpense,
       resolveFlag,
       clearReview,

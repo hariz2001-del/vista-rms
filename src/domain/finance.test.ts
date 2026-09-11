@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   liquidBalance,
+  openingDeficitFor,
   orderNetByBrand,
   settlePeriod,
   splitShared,
   withRunningBalance,
 } from './finance.ts'
-import type { AccountSettings, Expense, LedgerEntry, Order } from './types.ts'
+import type { AccountSettings, Expense, LedgerEntry, Order, PeriodClosure } from './types.ts'
 
 const FOOD = 'brand-food'
 const DRINKS = 'brand-drinks'
@@ -131,6 +132,7 @@ describe('settlement', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [],
+      ledger: [],
     })
 
     expect(result.food.netSalesSen).toBe(100_000)
@@ -156,6 +158,7 @@ describe('settlement', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [],
+      ledger: [],
     })
 
     expect(result.food.netResultSen).toBe(-15_000)
@@ -176,6 +179,7 @@ describe('settlement', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 15_000,
       outstandingAdvances: [],
+      ledger: [],
     })
 
     expect(result.offsetResultSen).toBe(5_000)
@@ -195,6 +199,7 @@ describe('settlement', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 15_000,
       outstandingAdvances: [],
+      ledger: [],
     })
 
     expect(result.hostCommissionSen).toBe(0)
@@ -210,6 +215,7 @@ describe('settlement', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [],
+      ledger: [],
     })
 
     // A freezer is real money out of the bank, but it is not a cost of trading.
@@ -229,6 +235,7 @@ describe('settlement', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [],
+      ledger: [],
     })
 
     expect(result.food.sharedOverheadShareSen).toBe(5_000)
@@ -255,6 +262,7 @@ describe('out-of-pocket advances', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [rentPaidByDrinks],
+      ledger: [],
     })
 
     // Not 300 (their own share) and not 700 (the counterparty's) — all of it.
@@ -278,6 +286,7 @@ describe('out-of-pocket advances', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [rentPaidByDrinks],
+      ledger: [],
     })
 
     // The results absorb their shares of the rent...
@@ -302,6 +311,7 @@ describe('out-of-pocket advances', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [settled],
+      ledger: [],
     })
 
     expect(result.drinksAdvancesSen).toBe(0)
@@ -319,10 +329,169 @@ describe('out-of-pocket advances', () => {
       drinksBrandId: DRINKS,
       openingIouSen: 0,
       outstandingAdvances: [august],
+      ledger: [],
     })
 
     expect(result.drinksAdvancesSen).toBe(1_000)
     expect(result.drinksPayoutSen).toBe(10_000 + 1_000)
+  })
+})
+
+describe('partner drawings', () => {
+  function drawing(brandId: string, amountSen: number): LedgerEntry {
+    return {
+      id: 1,
+      businessDate: '2026-09-04',
+      entryAt: '2026-09-04T10:00:00Z',
+      direction: 'MONEY_OUT',
+      amountSen,
+      category: 'OWNER_DRAWING',
+      description: 'Drawing',
+      brandId,
+      orderId: null,
+      shiftId: null,
+    }
+  }
+
+  it('deducts what a partner already took from what they are paid', () => {
+    const result = settlePeriod({
+      orders: [order([{ brandId: FOOD, netSen: 100_000 }])],
+      expenses: [],
+      settings: SETTINGS,
+      foodBrandId: FOOD,
+      drinksBrandId: DRINKS,
+      openingIouSen: 0,
+      outstandingAdvances: [],
+      ledger: [drawing(FOOD, 30_000)],
+    })
+
+    // 100,000 result, 30,000 host cut, so the share is 70,000 — less the
+    // 30,000 already taken.
+    expect(result.hostCommissionSen).toBe(30_000)
+    expect(result.foodDrawingsSen).toBe(30_000)
+    expect(result.foodPayoutSen).toBe(40_000)
+  })
+
+  it('keeps one partner drawing from touching the other payout', () => {
+    const result = settlePeriod({
+      orders: [
+        order([
+          { brandId: FOOD, netSen: 100_000 },
+          { brandId: DRINKS, netSen: 50_000 },
+        ]),
+      ],
+      expenses: [],
+      settings: SETTINGS,
+      foodBrandId: FOOD,
+      drinksBrandId: DRINKS,
+      openingIouSen: 0,
+      outstandingAdvances: [],
+      ledger: [drawing(FOOD, 30_000)],
+    })
+
+    expect(result.drinksDrawingsSen).toBe(0)
+    expect(result.drinksPayoutSen).toBe(50_000 + 30_000)
+  })
+
+  it('leaves a partner owing when they drew more than they earned', () => {
+    const result = settlePeriod({
+      orders: [order([{ brandId: FOOD, netSen: 10_000 }])],
+      expenses: [],
+      settings: SETTINGS,
+      foodBrandId: FOOD,
+      drinksBrandId: DRINKS,
+      openingIouSen: 0,
+      outstandingAdvances: [],
+      ledger: [drawing(FOOD, 50_000)],
+    })
+
+    // Share is 7,000 after the cut; they took 50,000. Not floored — hiding the
+    // overdraw behind a zero would quietly write off the difference.
+    expect(result.foodPayoutSen).toBe(7_000 - 50_000)
+    expect(result.transfer.direction).toBe('FOOD_OWES_HOST')
+    expect(result.transfer.amountSen).toBe(43_000)
+  })
+
+  it('ignores a drawing that is not a drawing', () => {
+    const expenseEntry = { ...drawing(FOOD, 30_000), category: 'OPERATING_EXPENSE' as const }
+    const result = settlePeriod({
+      orders: [order([{ brandId: FOOD, netSen: 100_000 }])],
+      expenses: [],
+      settings: SETTINGS,
+      foodBrandId: FOOD,
+      drinksBrandId: DRINKS,
+      openingIouSen: 0,
+      outstandingAdvances: [],
+      ledger: [expenseEntry],
+    })
+
+    expect(result.foodDrawingsSen).toBe(0)
+  })
+})
+
+describe('transfer instruction', () => {
+  const base = {
+    expenses: [],
+    settings: SETTINGS,
+    foodBrandId: FOOD,
+    drinksBrandId: DRINKS,
+    openingIouSen: 0,
+    outstandingAdvances: [],
+    ledger: [],
+  }
+
+  it('says the host pays Food when Food is owed', () => {
+    const result = settlePeriod({ ...base, orders: [order([{ brandId: FOOD, netSen: 100_000 }])] })
+    expect(result.transfer).toEqual({ amountSen: 70_000, direction: 'HOST_PAYS_FOOD' })
+  })
+
+  it('says nothing moves when a loss leaves Food at zero', () => {
+    const result = settlePeriod({
+      ...base,
+      orders: [order([{ brandId: FOOD, netSen: 10_000 }])],
+      expenses: [expense({ amountSen: 25_000, brandId: FOOD })],
+    })
+    expect(result.transfer).toEqual({ amountSen: 0, direction: 'NOTHING' })
+  })
+})
+
+describe('closure chain', () => {
+  function closure(startDate: string, endDate: string, closingIouSen: number): PeriodClosure {
+    return {
+      id: `${startDate}..${endDate}`,
+      startDate,
+      endDate,
+      closedAt: `${endDate}T12:00:00Z`,
+      foodNetSalesSen: 0,
+      foodDirectExpensesSen: 0,
+      foodOverheadShareSen: 0,
+      foodNetResultSen: 0,
+      openingIouSen: 0,
+      hostCommissionSen: 0,
+      closingIouSen,
+    }
+  }
+
+  it('starts from zero when nothing has ever been closed', () => {
+    expect(openingDeficitFor([], '2026-09-01')).toBe(0)
+  })
+
+  it('carries the previous closure forward', () => {
+    const closures = [closure('2026-08-01', '2026-08-31', 15_000)]
+    expect(openingDeficitFor(closures, '2026-09-01')).toBe(15_000)
+  })
+
+  it('takes the most recent prior closure, not the first', () => {
+    const closures = [
+      closure('2026-07-01', '2026-07-31', 40_000),
+      closure('2026-08-01', '2026-08-31', 15_000),
+    ]
+    expect(openingDeficitFor(closures, '2026-09-01')).toBe(15_000)
+  })
+
+  it('ignores closures that end after the period starts', () => {
+    const closures = [closure('2026-09-01', '2026-09-30', 99_000)]
+    expect(openingDeficitFor(closures, '2026-09-01')).toBe(0)
   })
 })
 
