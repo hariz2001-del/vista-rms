@@ -3,15 +3,21 @@
 React + Vite dashboard for the owners of the Vista counter. English throughout, integer sen
 throughout, light mode only — the same choices as the POS.
 
-**Status: UI round.** Runs entirely on generated demo data (`src/data/fake/`) with an in-memory
-store standing in for the API. `api-vista` has the money path but not expenses, ledger reporting
-or settlement yet, so wiring this to it is the next step, not this one.
+**Status: connected to `api-vista`.** Sign in with a partner account and the dashboard reads the
+real books from `GET /rms/snapshot`, re-reading every five seconds — a sale rung at the counter
+shows up within that. Every action (log an expense, settle an advance, Adjust Balance, force-close,
+menu price and sold-out, settings, closing a period) is a request to the API, followed by a fresh
+read. A period's settlement is computed and frozen by the server; the figures on screen are a
+preview. The counter account is refused.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5174
+npm run dev      # http://localhost:5174 — reads api-vista on http://127.0.0.1:3000, start that first
 npm run check    # oxlint + vitest + tsc + vite build
 ```
+
+Point at a different API with `VITE_API_BASE_URL` (see `.env.example`). Set `VITE_DEMO=1` to run
+on the generated demo history with no server at all.
 
 ## The six sections
 
@@ -88,7 +94,8 @@ neither Vista app ships one.
 
 ## Demo data
 
-`src/data/fake/generate.ts` produces five weeks of trading from a fixed seed: weekday/weekend
+Used only with `VITE_DEMO=1`. `src/data/fake/generate.ts` produces five weeks of trading from a
+fixed seed: weekday/weekend
 variation, Mondays closed, rent and utilities on their usual dates, restocks, three partner
 drawings, a chiller the Drinks partner paid for and has never been reimbursed for, two historical
 flagged sales, two cashier corrections, one sale priced offline against a stale menu, and one shift
@@ -97,7 +104,9 @@ not thin.
 
 ## Tests
 
-31 tests cover the settlement maths and correction reporting: shared splits summing exactly,
+33 tests cover the settlement maths and correction reporting — including that a sale the cashier
+refunded is not paid out to the partners, with the same figures the server's period close is
+tested against: shared splits summing exactly,
 the host cut clamped at zero on a loss, a deficit carried forward and then recovered across
 periods, capital assets excluded from the operating result, the stored split winning over the
 current setting, running balance ordering by business date, same-price cross-brand exchanges,

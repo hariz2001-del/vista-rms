@@ -1,4 +1,11 @@
-import type { AccountSettings, Expense, LedgerEntry, Order, PeriodClosure } from './types.ts'
+import type {
+  AccountSettings,
+  Expense,
+  LedgerEntry,
+  Order,
+  PeriodClosure,
+  SaleCorrection,
+} from './types.ts'
 
 /**
  * The partner settlement maths.
@@ -100,6 +107,13 @@ export type TransferInstruction = {
 
 type SettlementInput = {
   orders: readonly Order[]
+  /**
+   * Cashier cancels and exchanges in the period. The original sale is never
+   * edited, so without these the partners would be paid on money that was
+   * handed back to the customer. The server's period close folds them in the
+   * same way; the preview here must agree with it.
+   */
+  corrections?: readonly SaleCorrection[]
   expenses: readonly Expense[]
   settings: AccountSettings
   foodBrandId: string
@@ -222,6 +236,11 @@ function brandFinancials(
  */
 export function settlePeriod(input: SettlementInput): SettlementSummary {
   const netByBrand = orderNetByBrand(input.orders)
+  for (const correction of input.corrections ?? []) {
+    for (const delta of correction.brandDeltas) {
+      netByBrand.set(delta.brandId, (netByBrand.get(delta.brandId) ?? 0) + delta.deltaSen)
+    }
+  }
 
   const food = brandFinancials(
     input.foodBrandId,

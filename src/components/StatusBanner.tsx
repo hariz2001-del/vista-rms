@@ -1,6 +1,7 @@
 import { AlertTriangle, Circle, CircleDot, MoreVertical, WifiOff } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { VistaStore } from '../data/store.ts'
+import { IS_DEMO } from '../lib/mode.ts'
 import { formatRinggit } from '../domain/money.ts'
 import { bannerState, type BannerState } from '../domain/selectors.ts'
 
@@ -156,7 +157,9 @@ export function StatusBanner({ store }: { store: VistaStore }) {
  * affordance look like part of the product.
  */
 export function BannerPreviewControls({ store }: { store: VistaStore }) {
-  if (!import.meta.env.DEV) return null
+  // Demo mode only. On the real books the banner reads the counter's heartbeat,
+  // and a preview button that faked it would be lying.
+  if (!import.meta.env.DEV || !IS_DEMO) return null
 
   const openShift = store.shifts.find((shift) => shift.closedAt === null)
 

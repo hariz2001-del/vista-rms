@@ -55,6 +55,9 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
     if (!foodBrand || !drinksBrand) return null
     return settlePeriod({
       orders: inRange(store.orders, range.startDate, range.endDate),
+      // Refunds and exchanges at the counter. Without these a cancelled sale
+      // would still be paid out to the partners.
+      corrections: inRange(store.corrections, range.startDate, range.endDate),
       expenses: inRange(store.expenses, range.startDate, range.endDate),
       // Not scoped to the range: an unreimbursed advance from an earlier period
       // is still owed, and settling without it would leave the partner short.
@@ -70,6 +73,7 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
     })
   }, [
     store.orders,
+    store.corrections,
     store.expenses,
     store.ledger,
     store.closures,
@@ -85,27 +89,17 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
   /**
    * Reasons this period cannot be frozen yet.
    *
-   * Locking over an unreconciled shift or an unresolved flag would bake a figure
-   * already known to be wrong into a snapshot both partners are paid against.
+   * Only an open shift: its takings are still moving, so a snapshot would be
+   * wrong the moment it was taken. The server refuses the same case. Nothing else
+   * waits on the owner — flags and price reviews no longer exist, and a bank
+   * difference is theirs to adjust whenever they choose.
    */
   const blockers = useMemo(() => {
-    const reasons: string[] = []
-    const shifts = inRange(store.shifts, range.startDate, range.endDate)
-    const orders = inRange(store.orders, range.startDate, range.endDate)
-
-    const open = shifts.filter((shift) => shift.closedAt === null).length
-    const unreconciled = shifts.filter(
-      (shift) => shift.reconciliationStatus === 'UNRECONCILED',
+    const open = inRange(store.shifts, range.startDate, range.endDate).filter(
+      (shift) => shift.closedAt === null,
     ).length
-    const flagged = orders.filter((order) => order.flagStatus === 'FLAGGED').length
-    const review = orders.filter((order) => order.needsReview).length
-
-    if (open > 0) reasons.push(`${open} shift still open`)
-    if (unreconciled > 0) reasons.push(`${unreconciled} shift with an unexplained bank difference`)
-    if (flagged > 0) reasons.push(`${flagged} sale still flagged by the cashier`)
-    if (review > 0) reasons.push(`${review} sale awaiting a price review`)
-    return reasons
-  }, [store.shifts, store.orders, range])
+    return open > 0 ? [`${open} shift still open`] : []
+  }, [store.shifts, range])
 
   const alreadyClosed = useMemo(
     () =>

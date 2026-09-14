@@ -43,8 +43,17 @@ export type BalanceAdjustment = {
   shiftId: string | null
 }
 
-export function useVistaStore() {
-  const [settings, setSettings] = useState<AccountSettings>(ACCOUNT)
+const noop = () => {}
+
+/**
+ * The demo books: generated history, in memory, reset on reload. Used only in
+ * demo mode (`VITE_DEMO=1`); everything else runs on `useApiStore`, which returns
+ * the same shape. The argument exists only so the two are interchangeable.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function useDemoStore(_enabled = true) {
+  const [settings, setSettingsState] = useState<AccountSettings>(ACCOUNT)
+  const setSettings = useCallback((next: AccountSettings) => setSettingsState(next), [])
   const [orders, setOrders] = useState<Order[]>(HISTORY.orders)
   const [corrections] = useState<SaleCorrection[]>(HISTORY.corrections)
   const [shifts, setShifts] = useState<Shift[]>(HISTORY.shifts)
@@ -332,9 +341,13 @@ export function useVistaStore() {
       settleAdvance,
       toggleSoldOut,
       updatePrice,
+      error: null as string | null,
+      dismissError: noop,
+      isLoading: false,
     }),
     [
       settings,
+      setSettings,
       products,
       orders,
       corrections,
@@ -356,4 +369,4 @@ export function useVistaStore() {
   )
 }
 
-export type VistaStore = ReturnType<typeof useVistaStore>
+export type VistaStore = ReturnType<typeof useDemoStore>
