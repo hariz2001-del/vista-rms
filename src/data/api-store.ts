@@ -3,6 +3,7 @@ import type { SettlementSummary } from '../domain/finance.ts'
 import type {
   AccountSettings,
   Brand,
+  CounterSession,
   Category,
   Expense,
   LedgerEntry,
@@ -50,6 +51,7 @@ type Snapshot = {
   expenses: Expense[]
   closures: PeriodClosure[]
   terminal: TerminalStatus
+  counterSessions: CounterSession[]
 }
 
 const EMPTY_SETTINGS: AccountSettings = {
@@ -203,6 +205,20 @@ export function useApiStore(enabled: boolean): VistaStore {
     [],
   )
 
+  const renamePartner = useCallback(
+    (partnerId: string, name: string) => {
+      void perform('The partner name', () =>
+        apiRequest('PUT', `/rms/partners/${partnerId}`, { name }),
+      )
+    },
+    [perform],
+  )
+
+  /** Sends the counter tablet back to its sign-in screen on its next request. */
+  const signOutCounter = useCallback(() => {
+    void perform('Signing the counter out', () => apiRequest('POST', '/rms/counter/sign-out'))
+  }, [perform])
+
   const dismissError = useCallback(() => setError(null), [])
   // Banner previews are a demo-mode affordance. Real terminal state comes from
   // the counter's heartbeat and nothing here may pretend otherwise.
@@ -231,6 +247,9 @@ export function useApiStore(enabled: boolean): VistaStore {
       expenses: snapshot?.expenses ?? [],
       ledger: snapshot?.ledger ?? [],
       partners: snapshot?.partners ?? [],
+      counterSessions: snapshot?.counterSessions ?? [],
+      renamePartner,
+      signOutCounter,
       closures: snapshot?.closures ?? [],
       terminal: snapshot?.terminal ?? EMPTY_TERMINAL,
       today: snapshot?.businessDate ?? new Date().toISOString().slice(0, 10),
@@ -252,6 +271,8 @@ export function useApiStore(enabled: boolean): VistaStore {
       settingsDraft,
       setSettings,
       brands,
+      renamePartner,
+      signOutCounter,
       closePeriod,
       forceCloseShift,
       reopenDemoShift,

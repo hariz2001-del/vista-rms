@@ -3,12 +3,18 @@
 React + Vite dashboard for the owners of the Vista counter. English throughout, integer sen
 throughout, light mode only — the same choices as the POS.
 
-**Status: connected to `api-vista`.** Sign in with a partner account and the dashboard reads the
-real books from `GET /rms/snapshot`, re-reading every five seconds — a sale rung at the counter
-shows up within that. Every action (log an expense, settle an advance, Adjust Balance, force-close,
-menu price and sold-out, settings, closing a period) is a request to the API, followed by a fresh
-read. A period's settlement is computed and frozen by the server; the figures on screen are a
-preview. The counter account is refused.
+**Status: connected to `api-vista`.** Sign in with the business account — the same one the
+counter uses (`demo@vistahub.my` / `vista` in the demo seed) — and the dashboard reads the real
+books from `GET /rms/snapshot`, re-reading every five seconds, so a sale rung at the counter shows
+up within that. Every action (log an expense, settle an advance, Adjust Balance, force-close, menu
+price and sold-out, settings, partner names, closing a period) is a request to the API, followed
+by a fresh read. A period's settlement is computed and frozen by the server; the figures on screen
+are a preview.
+
+Signing in here gives an **owner session** (expires after 12 hours). The counter tablet signs in
+with the same account but gets a counter session, which is refused here. **Settings → Counter
+tablet** signs the counter out: it returns to its sign-in screen on its next request, keeping any
+unsent sales on the device.
 
 ```bash
 npm install

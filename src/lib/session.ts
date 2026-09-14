@@ -1,30 +1,26 @@
-import { ApiError, apiRequest, readToken, writeToken } from './http'
+import { apiRequest, readToken, writeToken } from './http'
 
 export type SessionUser = {
   id: string
   name: string
   email: string
-  role: 'CASHIER' | 'OWNER_FOOD' | 'OWNER_DRINKS'
+  role: string
 }
 
 /**
- * Sign in to the owner dashboard. Only a partner account gets in: the counter
- * account is refused here for a clear message, and by the server regardless.
+ * Sign in to the owner dashboard.
+ *
+ * The business has one account. Signing in here asks for an owner session,
+ * which can see the books and expires after a working day. The counter tablet
+ * signs in with the same account but gets a counter session, which cannot open
+ * any of this — so a stolen tablet can sell, but cannot reach the money.
  */
 export async function signIn(email: string, password: string): Promise<SessionUser> {
   const result = await apiRequest<{ token: string; user: SessionUser }>('POST', '/auth/login', {
     email,
     password,
+    scope: 'OWNER',
   })
-
-  if (result.user.role === 'CASHIER') {
-    throw new ApiError(
-      'auth:FORBIDDEN',
-      'That is the counter account. Sign in with a partner account to see the books.',
-      403,
-    )
-  }
-
   writeToken(result.token)
   return result.user
 }

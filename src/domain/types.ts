@@ -182,6 +182,13 @@ export type TerminalStatus = {
   unsentSaleCount: number
 }
 
+/** A counter tablet signed in right now. The owner can sign it out from Settings. */
+export type CounterSession = {
+  id: string
+  signedInAt: string
+  lastUsedAt: string
+}
+
 // ---------------------------------------------------------------------------
 // Partners
 // ---------------------------------------------------------------------------

@@ -1,5 +1,121 @@
+import { useState } from 'react'
 import { Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
+
+function clock(iso: string): string {
+  return new Intl.DateTimeFormat('en-MY', {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'Asia/Kuala_Lumpur',
+  }).format(new Date(iso))
+}
+
+/**
+ * A partner's name, saved when the field is left. Keyed on the saved name by
+ * its parent, so a change arriving from the server replaces the draft.
+ */
+function PartnerNameField({ name, onSave }: { name: string; onSave: (next: string) => void }) {
+  const [draft, setDraft] = useState(name)
+
+  function commit() {
+    const next = draft.trim()
+    if (next && next !== name) onSave(next)
+    else setDraft(name)
+  }
+
+  return (
+    <input
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+      maxLength={60}
+      aria-label="Partner name"
+      className="vista-control w-full max-w-xs px-3 text-sm font-black"
+    />
+  )
+}
+
+/**
+ * The counter tablet stays signed in, so the cashier only ever needs the PIN.
+ * This is the one place it can be signed out — for a lost, stolen or replaced
+ * tablet.
+ */
+function CounterPanel({ store }: { store: VistaStore }) {
+  const [confirming, setConfirming] = useState(false)
+  const sessions = store.counterSessions
+
+  return (
+    <Panel>
+      <SectionHeading
+        title="Counter tablet"
+        hint="The counter stays signed in, so the cashier only needs the PIN. Sign it out here if the tablet is lost or replaced."
+      />
+
+      {sessions.length === 0 ? (
+        <p className="text-sm font-semibold text-muted">
+          The counter is not signed in. Sign in on the tablet with the business account.
+        </p>
+      ) : (
+        <>
+          <ul className="divide-y divide-slate-100 text-sm">
+            {sessions.map((session) => (
+              <li key={session.id} className="flex flex-wrap justify-between gap-2 py-2">
+                <span className="font-black">Signed in {clock(session.signedInAt)}</span>
+                <span className="font-semibold text-muted">
+                  last active {clock(session.lastUsedAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {confirming ? (
+            <div className="mt-3 border border-line bg-canvas p-3">
+              <p className="text-sm font-bold">Sign the counter out?</p>
+              <p className="mt-1 text-xs text-muted">
+                The tablet goes back to its sign-in screen the next time it reaches the server. Sales
+                it has not sent yet stay on it and send once it is signed in again. A tablet that is
+                offline only finds out when it reconnects.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    store.signOutCounter()
+                    setConfirming(false)
+                  }}
+                  className="vista-button-primary min-h-11 px-4"
+                >
+                  Sign out the counter
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirming(false)}
+                  className="vista-button-secondary min-h-11 px-4"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="vista-button-secondary mt-3 min-h-11 px-4"
+            >
+              Sign out the counter…
+            </button>
+          )}
+        </>
+      )}
+    </Panel>
+  )
+}
 
 /** Two values that must always total 100. Moving one moves the other. */
 function RatioSlider({
@@ -176,13 +292,20 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
       </Panel>
 
       <Panel>
-        <SectionHeading title="Partners" />
+        <SectionHeading
+          title="Partners"
+          hint="The names settlement pays. Not logins — the business has one account."
+        />
         <ul className="divide-y divide-slate-100">
           {store.partners.map((partner) => (
             <li key={partner.id} className="flex items-center gap-3 py-3">
               <div className="flex-1">
-                <p className="text-sm font-black">{partner.name}</p>
-                <p className="text-xs font-semibold text-muted">
+                <PartnerNameField
+                  key={`${partner.id}:${partner.name}`}
+                  name={partner.name}
+                  onSave={(next) => store.renamePartner(partner.id, next)}
+                />
+                <p className="mt-1 text-xs font-semibold text-muted">
                   {partner.role === 'FOOD_OWNER' ? 'Food brand owner' : 'Stall host'}
                 </p>
               </div>
@@ -198,6 +321,8 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
           ))}
         </ul>
       </Panel>
+
+      <CounterPanel store={store} />
     </div>
   )
 }

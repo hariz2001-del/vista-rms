@@ -1,11 +1,13 @@
 import { useCallback, useMemo, useState } from 'react'
 import type {
   AccountSettings,
+  CounterSession,
   Expense,
   ExpenseCategory,
   LedgerDirection,
   LedgerEntry,
   Order,
+  Partner,
   PaymentSource,
   PeriodClosure,
   Product,
@@ -62,6 +64,18 @@ export function useDemoStore(_enabled = true) {
   const [products, setProducts] = useState<Product[]>(PRODUCTS)
   const [closures, setClosures] = useState<PeriodClosure[]>(HISTORY.closures)
   const [terminal, setTerminal] = useState<TerminalStatus>(HISTORY.terminal)
+  const [partners, setPartners] = useState<Partner[]>(HISTORY.partners)
+  const [counterSessions, setCounterSessions] = useState<CounterSession[]>(() => [
+    { id: 'demo-counter', signedInAt: `${TODAY}T03:58:00Z`, lastUsedAt: new Date().toISOString() },
+  ])
+
+  const renamePartner = useCallback((partnerId: string, name: string) => {
+    setPartners((current) =>
+      current.map((partner) => (partner.id === partnerId ? { ...partner, name } : partner)),
+    )
+  }, [])
+
+  const signOutCounter = useCallback(() => setCounterSessions([]), [])
 
   const addExpense = useCallback(
     (input: NewExpense) => {
@@ -328,7 +342,10 @@ export function useDemoStore(_enabled = true) {
       shifts,
       expenses,
       ledger,
-      partners: HISTORY.partners,
+      partners,
+      counterSessions,
+      renamePartner,
+      signOutCounter,
       closures,
       terminal,
       today: TODAY,
@@ -356,6 +373,10 @@ export function useDemoStore(_enabled = true) {
       ledger,
       closures,
       terminal,
+      partners,
+      counterSessions,
+      renamePartner,
+      signOutCounter,
       closePeriod,
       forceCloseShift,
       reopenDemoShift,

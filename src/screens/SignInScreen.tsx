@@ -10,7 +10,7 @@ type Props = {
 
 /** The owner dashboard's front door. Partner accounts only. */
 export function SignInScreen({ onSignIn, showDemoHint }: Props) {
-  const [email, setEmail] = useState(showDemoHint ? 'food@vistahub.my' : '')
+  const [email, setEmail] = useState(showDemoHint ? 'demo@vistahub.my' : '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
@@ -38,7 +38,7 @@ export function SignInScreen({ onSignIn, showDemoHint }: Props) {
         <p className="page-kicker">Vista RMS / owner ledger</p>
         <h1 className="mt-1 text-3xl">Sign in</h1>
         <p className="mt-2 text-sm text-muted">
-          Partner accounts only. The counter account cannot open the books.
+          The business account — the same one the counter uses. Signing in here opens the books.
         </p>
 
         <label className="mt-6 block">
@@ -82,8 +82,7 @@ export function SignInScreen({ onSignIn, showDemoHint }: Props) {
 
         {showDemoHint ? (
           <p className="mt-5 border border-line bg-canvas p-3 text-xs text-muted">
-            Demo partners — <span className="font-mono">food@vistahub.my</span> (Hariz) or{' '}
-            <span className="font-mono">drinks@vistahub.my</span> (Iman), password{' '}
+            Demo — <span className="font-mono">demo@vistahub.my</span>, password{' '}
             <span className="font-mono">vista</span>
           </p>
         ) : null}
