@@ -1,10 +1,11 @@
 import { Camera, Check, HandCoins, Plus } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
+import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { splitShared } from '../domain/finance.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
-import { formatDate, formatMonth, monthOf, monthsIn } from '../domain/selectors.ts'
+import { formatDate, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
 import type { ExpenseCategory, PaymentSource } from '../domain/types.ts'
 
 const CATEGORIES: Array<{ value: ExpenseCategory; label: string }> = [
@@ -62,8 +63,10 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
   const [foodPct, setFoodPct] = useState(store.settings.sharedOverheadFoodPct)
   const [saved, setSaved] = useState(false)
 
-  const [month, setMonth] = useState(() => monthOf(store.today))
-  const months = useMemo(() => monthsIn(store.expenses), [store.expenses])
+  const [range, setRange] = useState<DateRange>(() => ({
+    startDate: `${monthOf(store.today)}-01`,
+    endDate: store.today,
+  }))
 
   const amountSen = parseRinggitToSen(amount)
   const canSave = amountSen !== null && amountSen > 0 && description.trim().length > 0
@@ -91,10 +94,10 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
 
   const visible = useMemo(
     () =>
-      store.expenses
-        .filter((expense) => monthOf(expense.businessDate) === month)
-        .toSorted((a, b) => b.businessDate.localeCompare(a.businessDate)),
-    [store.expenses, month],
+      inRange(store.expenses, range.startDate, range.endDate).toSorted((a, b) =>
+        b.businessDate.localeCompare(a.businessDate),
+      ),
+    [store.expenses, range],
   )
 
   const total = visible.reduce((sum, expense) => sum + expense.amountSen, 0)
@@ -259,19 +262,9 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
         </Panel>
 
         <Panel>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="mb-3 space-y-3">
             <SectionHeading title="Logged" />
-            <select
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
-              className="vista-control px-3"
-            >
-              {months.map((value) => (
-                <option key={value} value={value}>
-                  {formatMonth(value)}
-                </option>
-              ))}
-            </select>
+            <DateRangePicker value={range} onChange={setRange} today={store.today} showSummary />
           </div>
 
           <p className="mb-3 text-sm font-bold text-muted">
@@ -312,7 +305,7 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
 
           {visible.length === 0 ? (
             <p className="py-8 text-center text-sm font-semibold text-muted">
-              No expenses logged this month.
+              No expenses logged in this range.
             </p>
           ) : null}
         </Panel>

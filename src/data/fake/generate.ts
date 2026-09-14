@@ -6,6 +6,7 @@ import type {
   Partner,
   PeriodClosure,
   Shift,
+  SaleCorrection,
   TerminalStatus,
 } from '../../domain/types.ts'
 import { BRAND_DRINKS, BRAND_FOOD, PRODUCTS } from './catalogue.ts'
@@ -68,6 +69,7 @@ export type FakeHistory = {
   terminal: TerminalStatus
   shifts: Shift[]
   orders: Order[]
+  corrections: SaleCorrection[]
   ledger: LedgerEntry[]
   expenses: Expense[]
   partners: Partner[]
@@ -78,6 +80,7 @@ export type FakeHistory = {
 export function generateHistory(): FakeHistory {
   const shifts: Shift[] = []
   const orders: Order[] = []
+  const corrections: SaleCorrection[] = []
   const ledger: LedgerEntry[] = []
   const expenses: Expense[] = []
 
@@ -280,6 +283,83 @@ export function generateHistory(): FakeHistory {
     })
   }
 
+  // Paid-sale corrections are separate audit facts. Two current-shift examples
+  // keep the owner notification and cash book visible in the demo without
+  // mutating the generated orders they refer to.
+  const correctedOrders = orders.filter((order) => order.businessDate === TODAY).slice(2, 4)
+  const cancelOrder = correctedOrders[0]
+  if (cancelOrder) {
+    const byBrand = new Map<string, number>()
+    for (const line of cancelOrder.lines) {
+      const net =
+        (line.unitPriceSen + line.modifierTotalSen) * line.quantity -
+        line.lineDiscountSen -
+        line.allocatedOrderDiscountSen
+      byBrand.set(line.brandId, (byBrand.get(line.brandId) ?? 0) + net)
+    }
+    const correction: SaleCorrection = {
+      id: 'correction-demo-cancel',
+      originalOrderId: cancelOrder.id,
+      originalQueueNumber: cancelOrder.queueNumber,
+      shiftId: cancelOrder.shiftId,
+      businessDate: cancelOrder.businessDate,
+      createdAt: `${TODAY}T17:12:00Z`,
+      kind: 'CANCEL',
+      reason: 'Customer cancelled after paying',
+      deltaSen: -cancelOrder.totalAmountSen,
+      brandDeltas: [...byBrand].map(([brandId, amountSen]) => ({
+        brandId,
+        deltaSen: -amountSen,
+      })),
+    }
+    corrections.push(correction)
+    for (const delta of correction.brandDeltas) {
+      addLedger({
+        businessDate: correction.businessDate,
+        entryAt: correction.createdAt,
+        direction: 'MONEY_OUT',
+        amountSen: -delta.deltaSen,
+        category: 'REFUND',
+        description: `Cancel ${cancelOrder.queueNumber}: ${correction.reason}`,
+        brandId: delta.brandId,
+        orderId: cancelOrder.id,
+        shiftId: cancelOrder.shiftId,
+        correctionId: correction.id,
+      })
+    }
+  }
+
+  const exchangeOrder = correctedOrders[1]
+  const exchangeBrand = exchangeOrder?.lines[0]?.brandId
+  if (exchangeOrder && exchangeBrand) {
+    const amountSen = Math.min(300, exchangeOrder.totalAmountSen)
+    const correction: SaleCorrection = {
+      id: 'correction-demo-exchange',
+      originalOrderId: exchangeOrder.id,
+      originalQueueNumber: exchangeOrder.queueNumber,
+      shiftId: exchangeOrder.shiftId,
+      businessDate: exchangeOrder.businessDate,
+      createdAt: `${TODAY}T17:26:00Z`,
+      kind: 'EXCHANGE',
+      reason: 'Discount missed at checkout',
+      deltaSen: -amountSen,
+      brandDeltas: [{ brandId: exchangeBrand, deltaSen: -amountSen }],
+    }
+    corrections.push(correction)
+    addLedger({
+      businessDate: correction.businessDate,
+      entryAt: correction.createdAt,
+      direction: 'MONEY_OUT',
+      amountSen,
+      category: 'REFUND',
+      description: `Exchange ${exchangeOrder.queueNumber}: ${correction.reason}`,
+      brandId: exchangeBrand,
+      orderId: exchangeOrder.id,
+      shiftId: exchangeOrder.shiftId,
+      correctionId: correction.id,
+    })
+  }
+
   // ---- Expenses -----------------------------------------------------------
 
   let expenseId = 1
@@ -450,5 +530,5 @@ export function generateHistory(): FakeHistory {
     unsentSaleCount: 0,
   }
 
-  return { terminal, shifts, orders, ledger, expenses, partners, closures: [], tradingDates }
+  return { terminal, shifts, orders, corrections, ledger, expenses, partners, closures: [], tradingDates }
 }

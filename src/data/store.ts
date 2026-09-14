@@ -3,11 +3,13 @@ import type {
   AccountSettings,
   Expense,
   ExpenseCategory,
+  LedgerDirection,
   LedgerEntry,
   Order,
   PaymentSource,
   PeriodClosure,
   Product,
+  SaleCorrection,
   Shift,
   TerminalStatus,
 } from '../domain/types.ts'
@@ -31,11 +33,20 @@ export type NewExpense = {
   description: string
 }
 
-export type FlagResolution = 'DISMISSED' | 'RESOLVED_REFUND' | 'RESOLVED_ADJUSTMENT'
+/** One deliberate correction to the cash balance. See `adjustBalance`. */
+export type BalanceAdjustment = {
+  businessDate: string
+  amountSen: number
+  direction: LedgerDirection
+  description: string
+  /** The shift close that prompted it, or null for a standalone correction. */
+  shiftId: string | null
+}
 
 export function useVistaStore() {
   const [settings, setSettings] = useState<AccountSettings>(ACCOUNT)
   const [orders, setOrders] = useState<Order[]>(HISTORY.orders)
+  const [corrections] = useState<SaleCorrection[]>(HISTORY.corrections)
   const [shifts, setShifts] = useState<Shift[]>(HISTORY.shifts)
   const [expenses, setExpenses] = useState<Expense[]>(HISTORY.expenses)
   const [ledger, setLedger] = useState<LedgerEntry[]>(HISTORY.ledger)
@@ -93,92 +104,51 @@ export function useVistaStore() {
     [],
   )
 
-  /**
-   * A paid sale is immutable. Resolving a flag never edits it — a refund writes
-   * its own reversing entry, so the history stays auditable.
-   */
-  const resolveFlag = useCallback(
-    (orderId: string, resolution: FlagResolution, note: string) => {
-      const order = orders.find((candidate) => candidate.id === orderId)
-      if (!order) return
-
-      setOrders((current) =>
-        current.map((candidate) =>
-          candidate.id === orderId
-            ? { ...candidate, flagStatus: resolution, flagReason: note || candidate.flagReason }
-            : candidate,
-        ),
-      )
-
-      if (resolution === 'RESOLVED_REFUND') {
-        setLedger((current) => [
-          ...current,
-          {
-            id: current.reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
-            businessDate: order.businessDate,
-            entryAt: new Date().toISOString(),
-            direction: 'MONEY_OUT',
-            amountSen: order.totalAmountSen,
-            category: 'REFUND',
-            description: `Refund · sale ${order.queueNumber}`,
-            brandId: null,
-            orderId: order.id,
-            shiftId: order.shiftId,
-          },
-        ])
-      }
-    },
-    [orders],
-  )
-
-  const clearReview = useCallback((orderId: string) => {
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId ? { ...order, needsReview: false, reviewReason: null } : order,
-      ),
-    )
-  }, [])
+  // There is deliberately no `resolveFlag` or `clearReview` here. The owner does
+  // not approve refunds and does not accept synced offline sales: the cashier
+  // cancels or edits at the counter, which writes its own contra-entry, and the
+  // owner sees the result as a REFUND row in the cash book. See spec §2.
 
   /**
-   * The owner says what a shift's variance actually was. Shift close deliberately
-   * leaves this open rather than guessing — the cashier is not asked to make an
-   * accounting judgement mid-service — and this is where the ledger entry that
-   * closes the gap gets written.
+   * Reconciliation, done deliberately rather than on prompt.
+   *
+   * Nothing nags the owner about a bank difference: variance is a quiet audit
+   * column on the shift, and this is the button that closes the gap when the
+   * owner chooses to. Writes exactly one `RECONCILIATION_ADJUSTMENT` entry, so
+   * the running balance moves by the amount entered and nothing else.
+   *
+   * Naming a shift is optional and only ties the adjustment back to the close
+   * that prompted it; that shift is then marked reconciled.
    */
-  const reconcileShift = useCallback(
-    (shiftId: string, description: string) => {
-      const shift = shifts.find((candidate) => candidate.id === shiftId)
-      // A zero variance has nothing to reconcile, and a null one means the shift
-      // was never closed — neither should write a balancing entry.
-      const varianceSen = shift?.varianceSen
-      if (!shift || varianceSen === null || varianceSen === undefined || varianceSen === 0) return
+  const adjustBalance = useCallback((input: BalanceAdjustment) => {
+    if (input.amountSen <= 0) return
 
+    setLedger((current) => [
+      ...current,
+      {
+        id: current.reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
+        businessDate: input.businessDate,
+        entryAt: new Date().toISOString(),
+        direction: input.direction,
+        amountSen: input.amountSen,
+        category: 'RECONCILIATION_ADJUSTMENT',
+        description: input.description,
+        brandId: null,
+        orderId: null,
+        shiftId: input.shiftId,
+      },
+    ])
+
+    if (input.shiftId !== null) {
       setShifts((current) =>
-        current.map((candidate) =>
-          candidate.id === shiftId
-            ? { ...candidate, reconciliationStatus: 'RECONCILED' }
-            : candidate,
+        current.map((shift) =>
+          shift.id === input.shiftId
+            ? { ...shift, reconciliationStatus: 'RECONCILED' as const }
+            : shift,
         ),
       )
-
-      setLedger((current) => [
-        ...current,
-        {
-          id: current.reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
-          businessDate: shift.businessDate,
-          entryAt: new Date().toISOString(),
-          direction: varianceSen > 0 ? 'MONEY_IN' : 'MONEY_OUT',
-          amountSen: Math.abs(varianceSen),
-          category: 'RECONCILIATION_ADJUSTMENT',
-          description,
-          brandId: null,
-          orderId: null,
-          shiftId: shift.id,
-        },
-      ])
-    },
-    [shifts],
-  )
+    }
+  }, [])
 
   const settleAdvance = useCallback(
     (expenseId: string) => {
@@ -270,7 +240,11 @@ export function useVistaStore() {
   const forceCloseShift = useCallback(
     (shiftId: string) => {
       const shiftOrders = orders.filter((order) => order.shiftId === shiftId)
-      const systemNetSalesSen = shiftOrders.reduce((sum, order) => sum + order.totalAmountSen, 0)
+      const correctionDeltaSen = corrections
+        .filter((correction) => correction.shiftId === shiftId)
+        .reduce((sum, correction) => sum + correction.deltaSen, 0)
+      const systemNetSalesSen =
+        shiftOrders.reduce((sum, order) => sum + order.totalAmountSen, 0) + correctionDeltaSen
       setShifts((current) =>
         current.map((shift) =>
           shift.id === shiftId
@@ -288,12 +262,35 @@ export function useVistaStore() {
         ),
       )
     },
-    [orders],
+    [orders, corrections],
   )
 
   /** Dev-only: preview each banner state without waiting for real conditions. */
   const simulateTerminal = useCallback((patch: Partial<TerminalStatus>) => {
     setTerminal((current) => ({ ...current, ...patch }))
+  }, [])
+
+  /**
+   * Dev-only: put the demo back into a trading state.
+   *
+   * Without this, previewing the closed banner is a one-way trip — every state
+   * above it in the precedence order needs an open shift, so they all become
+   * unreachable until the page is reloaded.
+   */
+  const reopenDemoShift = useCallback(() => {
+    setShifts((current) => [
+      ...current,
+      {
+        id: `shift-demo-${Date.now()}`,
+        businessDate: TODAY,
+        openedAt: new Date().toISOString(),
+        closedAt: null,
+        systemNetSalesSen: null,
+        declaredBankTotalSen: null,
+        varianceSen: null,
+        reconciliationStatus: 'NOT_REQUIRED',
+      },
+    ])
   }, [])
 
   const toggleSoldOut = useCallback((productId: string) => {
@@ -318,6 +315,7 @@ export function useVistaStore() {
       categories: CATEGORIES,
       products,
       orders,
+      corrections,
       shifts,
       expenses,
       ledger,
@@ -327,11 +325,10 @@ export function useVistaStore() {
       today: TODAY,
       closePeriod,
       forceCloseShift,
+      reopenDemoShift,
       simulateTerminal,
       addExpense,
-      resolveFlag,
-      clearReview,
-      reconcileShift,
+      adjustBalance,
       settleAdvance,
       toggleSoldOut,
       updatePrice,
@@ -340,6 +337,7 @@ export function useVistaStore() {
       settings,
       products,
       orders,
+      corrections,
       shifts,
       expenses,
       ledger,
@@ -347,11 +345,10 @@ export function useVistaStore() {
       terminal,
       closePeriod,
       forceCloseShift,
+      reopenDemoShift,
       simulateTerminal,
       addExpense,
-      resolveFlag,
-      clearReview,
-      reconcileShift,
+      adjustBalance,
       settleAdvance,
       toggleSoldOut,
       updatePrice,

@@ -1,26 +1,10 @@
-import type { Expense, Order, Shift, TerminalStatus } from './types.ts'
+import type { Expense, Order, SaleCorrection, Shift, TerminalStatus } from './types.ts'
 import { isOperatingExpense, orderNetByBrand } from './finance.ts'
 import type { DailyPoint } from '../components/DailySalesChart.tsx'
 
 /** `2026-09-08` → `2026-09`. */
 export function monthOf(businessDate: string): string {
   return businessDate.slice(0, 7)
-}
-
-export function inMonth<T extends { businessDate: string }>(rows: readonly T[], month: string): T[] {
-  return rows.filter((row) => monthOf(row.businessDate) === month)
-}
-
-export function monthsIn(rows: readonly { businessDate: string }[]): string[] {
-  return [...new Set(rows.map((row) => monthOf(row.businessDate)))].toSorted()
-}
-
-export function formatMonth(month: string): string {
-  return new Intl.DateTimeFormat('en-MY', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(`${month}-01T12:00:00Z`))
 }
 
 /** Inclusive on both ends. Business dates are `YYYY-MM-DD`, so string compare is date compare. */
@@ -76,7 +60,11 @@ export function formatDate(businessDate: string): string {
   }).format(new Date(`${businessDate}T12:00:00Z`))
 }
 
-export function dailyPoints(orders: readonly Order[], brandIds: readonly string[]): DailyPoint[] {
+export function dailyPoints(
+  orders: readonly Order[],
+  brandIds: readonly string[],
+  corrections: readonly SaleCorrection[] = [],
+): DailyPoint[] {
   const byDate = new Map<string, Record<string, number>>()
 
   for (const order of orders) {
@@ -91,6 +79,15 @@ export function dailyPoints(orders: readonly Order[], brandIds: readonly string[
     byDate.set(order.businessDate, bucket)
   }
 
+  for (const correction of corrections) {
+    const bucket =
+      byDate.get(correction.businessDate) ?? Object.fromEntries(brandIds.map((id) => [id, 0]))
+    for (const delta of correction.brandDeltas) {
+      bucket[delta.brandId] = (bucket[delta.brandId] ?? 0) + delta.deltaSen
+    }
+    byDate.set(correction.businessDate, bucket)
+  }
+
   return [...byDate.entries()]
     .toSorted(([a], [b]) => a.localeCompare(b))
     .map(([date, byBrand]) => ({
@@ -100,8 +97,8 @@ export function dailyPoints(orders: readonly Order[], brandIds: readonly string[
     }))
 }
 
-export type MonthSummary = {
-  month: string
+export type PeriodSummary = {
+  range: DateRange
   netSalesSen: number
   discountsSen: number
   operatingExpensesSen: number
@@ -111,15 +108,22 @@ export type MonthSummary = {
   netByBrand: Map<string, number>
 }
 
-export function summariseMonth(
-  month: string,
+export function summariseRange(
+  range: DateRange,
   orders: readonly Order[],
   expenses: readonly Expense[],
-): MonthSummary {
-  const monthOrders = inMonth(orders, month)
-  const monthExpenses = inMonth(expenses, month)
+  corrections: readonly SaleCorrection[] = [],
+): PeriodSummary {
+  const monthOrders = inRange(orders, range.startDate, range.endDate)
+  const monthExpenses = inRange(expenses, range.startDate, range.endDate)
+  const monthCorrections = inRange(corrections, range.startDate, range.endDate)
 
-  const netSalesSen = monthOrders.reduce((sum, order) => sum + order.totalAmountSen, 0)
+  const correctionDeltaSen = monthCorrections.reduce(
+    (sum, correction) => sum + correction.deltaSen,
+    0,
+  )
+  const netSalesSen =
+    monthOrders.reduce((sum, order) => sum + order.totalAmountSen, 0) + correctionDeltaSen
   const discountsSen = monthOrders.reduce(
     (sum, order) => sum + order.lineDiscountSen + order.orderDiscountSen,
     0,
@@ -128,86 +132,69 @@ export function summariseMonth(
     .filter(isOperatingExpense)
     .reduce((sum, expense) => sum + expense.amountSen, 0)
 
+  const netByBrand = orderNetByBrand(monthOrders)
+  for (const correction of monthCorrections) {
+    for (const delta of correction.brandDeltas) {
+      netByBrand.set(delta.brandId, (netByBrand.get(delta.brandId) ?? 0) + delta.deltaSen)
+    }
+  }
+
   return {
-    month,
+    range,
     netSalesSen,
     discountsSen,
     operatingExpensesSen,
     operatingResultSen: netSalesSen - operatingExpensesSen,
     orderCount: monthOrders.length,
     averageTicketSen: monthOrders.length === 0 ? 0 : Math.round(netSalesSen / monthOrders.length),
-    netByBrand: orderNetByBrand(monthOrders),
+    netByBrand,
   }
 }
 
 export type AttentionItem = {
   id: string
-  kind: 'UNRECONCILED_SHIFT' | 'FLAGGED_SALE' | 'PRICE_REVIEW' | 'UNSETTLED_ADVANCE'
+  kind: 'UNSETTLED_ADVANCE' | 'CORRECTION_ACTIVITY'
   title: string
   detail: string
   businessDate: string
   amountSen: number
+  deltaSen: number | null
 }
 
 /**
- * The one list the owner should look at first. Everything here is something a
- * person has to decide — none of it resolves itself.
+ * Owner-visible work and security activity. Corrections need no approval, but
+ * hiding direct cashier refunds in the cash book would remove the only practical
+ * oversight control on that power.
  */
 export function attentionItems(
-  shifts: readonly Shift[],
-  orders: readonly Order[],
   expenses: readonly Expense[],
+  corrections: readonly SaleCorrection[] = [],
 ): AttentionItem[] {
-  const items: AttentionItem[] = []
-
-  for (const shift of shifts) {
-    if (shift.reconciliationStatus !== 'UNRECONCILED') continue
-    items.push({
-      id: `shift-${shift.id}`,
-      kind: 'UNRECONCILED_SHIFT',
-      title: 'Bank total did not match',
-      detail: 'Say what the difference was so the cashflow balance is complete.',
-      businessDate: shift.businessDate,
-      amountSen: shift.varianceSen ?? 0,
-    })
-  }
-
-  for (const order of orders) {
-    if (order.flagStatus === 'FLAGGED') {
-      items.push({
-        id: `flag-${order.id}`,
-        kind: 'FLAGGED_SALE',
-        title: `Sale ${order.queueNumber} flagged by the cashier`,
-        detail: order.flagReason ?? 'No reason given.',
-        businessDate: order.businessDate,
-        amountSen: order.totalAmountSen,
-      })
-    }
-    if (order.needsReview) {
-      items.push({
-        id: `review-${order.id}`,
-        kind: 'PRICE_REVIEW',
-        title: `Sale ${order.queueNumber} priced offline`,
-        detail: order.reviewReason ?? 'Priced against a cached menu.',
-        businessDate: order.businessDate,
-        amountSen: order.totalAmountSen,
-      })
-    }
-  }
-
-  for (const expense of expenses) {
-    if (expense.paidBy === 'STALL_FUNDS' || expense.isSettled) continue
-    items.push({
+  const advances = expenses
+    .filter((expense) => expense.paidBy !== 'STALL_FUNDS' && !expense.isSettled)
+    .map((expense) => ({
       id: `advance-${expense.id}`,
-      kind: 'UNSETTLED_ADVANCE',
+      kind: 'UNSETTLED_ADVANCE' as const,
       title: `${expense.description} paid out of pocket`,
       detail: 'The stall has not reimbursed this yet.',
       businessDate: expense.businessDate,
       amountSen: expense.amountSen,
-    })
-  }
+      deltaSen: null,
+    }))
 
-  return items.toSorted((a, b) => b.businessDate.localeCompare(a.businessDate))
+  const correctionActivity = corrections.map((correction) => ({
+    id: `correction-${correction.id}`,
+    kind: 'CORRECTION_ACTIVITY' as const,
+    title: `${correction.originalQueueNumber} ${correction.kind === 'CANCEL' ? 'cancelled' : 'edited'}`,
+    detail: correction.reason,
+    businessDate: correction.businessDate,
+    amountSen: Math.abs(correction.deltaSen),
+    deltaSen: correction.deltaSen,
+  }))
+
+  return [...advances, ...correctionActivity].toSorted((a, b) =>
+    b.businessDate.localeCompare(a.businessDate),
+  )
 }
 
 /**
@@ -242,7 +229,7 @@ export const SYNC_FAILURE_THRESHOLD = 3
 
 export type BannerState =
   | { kind: 'SYNC_FAILING'; failures: number }
-  | { kind: 'TABLET_OFFLINE'; minutesSince: number; unsentSaleCount: number }
+  | { kind: 'TABLET_OFFLINE'; minutesSince: number }
   | { kind: 'COUNTER_OPEN'; shiftId: string; openedAt: string; orderCount: number; takingsSen: number }
   | { kind: 'COUNTER_CLOSED'; lastClosedAt: string | null }
 
@@ -262,6 +249,7 @@ export function minutesSince(iso: string | null, now: Date): number {
 export function bannerState(
   shifts: readonly Shift[],
   orders: readonly Order[],
+  corrections: readonly SaleCorrection[],
   terminal: TerminalStatus,
   now: Date,
 ): BannerState {
@@ -276,22 +264,25 @@ export function bannerState(
   // a silent tablet overnight is a closed stall, not a fault.
   const quietFor = minutesSince(terminal.lastSeenAt, now)
   if (openShift && quietFor > HEARTBEAT_GRACE_MINUTES) {
-    return {
-      kind: 'TABLET_OFFLINE',
-      minutesSince: quietFor,
-      unsentSaleCount: terminal.unsentSaleCount,
-    }
+    // Only elapsed silence. A disconnected tablet cannot report how many sales
+    // it is holding, and the server cannot know about sales it never received —
+    // so any count here would be fiction.
+    return { kind: 'TABLET_OFFLINE', minutesSince: quietFor }
   }
 
   // 3 — trading normally.
   if (openShift) {
     const shiftOrders = orders.filter((order) => order.shiftId === openShift.id)
+    const correctionDeltaSen = corrections
+      .filter((correction) => correction.shiftId === openShift.id)
+      .reduce((sum, correction) => sum + correction.deltaSen, 0)
     return {
       kind: 'COUNTER_OPEN',
       shiftId: openShift.id,
       openedAt: openShift.openedAt,
       orderCount: shiftOrders.length,
-      takingsSen: shiftOrders.reduce((sum, order) => sum + order.totalAmountSen, 0),
+      takingsSen:
+        shiftOrders.reduce((sum, order) => sum + order.totalAmountSen, 0) + correctionDeltaSen,
     }
   }
 

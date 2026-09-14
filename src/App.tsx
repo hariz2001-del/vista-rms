@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { AppShell, type ScreenKey } from './components/AppShell.tsx'
-import { StatusBanner } from './components/StatusBanner.tsx'
+import { BannerPreviewControls, StatusBanner } from './components/StatusBanner.tsx'
 import { useVistaStore } from './data/store.ts'
 import { attentionItems } from './domain/selectors.ts'
 import { CashflowScreen } from './screens/CashflowScreen.tsx'
@@ -15,8 +15,8 @@ export default function App() {
   const [screen, setScreen] = useState<ScreenKey>('overview')
 
   const attentionCount = useMemo(
-    () => attentionItems(store.shifts, store.orders, store.expenses).length,
-    [store.shifts, store.orders, store.expenses],
+    () => attentionItems(store.expenses, store.corrections).length,
+    [store.expenses, store.corrections],
   )
 
   return (
@@ -26,7 +26,12 @@ export default function App() {
       businessName={store.settings.businessName}
       outletName={store.settings.outletName}
       attentionCount={attentionCount}
-      banner={<StatusBanner store={store} />}
+      banner={
+        <>
+          <StatusBanner store={store} />
+          <BannerPreviewControls store={store} />
+        </>
+      }
     >
       {screen === 'overview' ? <OverviewScreen store={store} onNavigate={setScreen} /> : null}
       {screen === 'cashflow' ? <CashflowScreen store={store} /> : null}

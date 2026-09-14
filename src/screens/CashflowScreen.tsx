@@ -1,11 +1,12 @@
-import { ScanLine } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { Badge, Money, Panel } from '../components/primitives.tsx'
+import { Scale } from 'lucide-react'
+import { useMemo, useState, type FormEvent } from 'react'
+import { DateRangePicker } from '../components/DateRangePicker.tsx'
+import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { withRunningBalance } from '../domain/finance.ts'
-import { formatRinggit } from '../domain/money.ts'
-import { formatDate, formatMonth, monthOf, monthsIn } from '../domain/selectors.ts'
-import type { LedgerCategory, LedgerEntry } from '../domain/types.ts'
+import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
+import { formatDate, formatRange, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
+import type { LedgerCategory, LedgerDirection, LedgerEntry } from '../domain/types.ts'
 
 const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   REVENUE: 'Sales',
@@ -27,13 +28,17 @@ const CATEGORY_LABEL: Record<LedgerCategory, string> = {
  * expense, drawing and capital event in the ledger. The predecessor shipped
  * exactly this mistake: 64 shift closes produced ~288 near-identical rows and
  * the ledger stopped being something anyone opened.
+ *
+ * Refunds are deliberately **not** rolled up. A counter correction is the one
+ * thing in here nobody announced, so it always keeps its own visible line with
+ * the cashier's reason on it rather than being netted into a day's total.
  */
 function groupDailySales(entries: readonly LedgerEntry[]): LedgerEntry[] {
   const sales = new Map<string, LedgerEntry & { count: number }>()
   const rest: LedgerEntry[] = []
 
   for (const entry of entries) {
-    if (entry.category !== 'REVENUE') {
+    if (entry.category !== 'REVENUE' || entry.correctionId) {
       rest.push(entry)
       continue
     }
@@ -57,131 +62,97 @@ function groupDailySales(entries: readonly LedgerEntry[]): LedgerEntry[] {
 }
 
 export function CashflowScreen({ store }: { store: VistaStore }) {
-  const months = useMemo(() => monthsIn(store.ledger), [store.ledger])
-  const [month, setMonth] = useState<string>(() => monthOf(store.today))
+  const [range, setRange] = useState<DateRange>(() => ({
+    startDate: `${monthOf(store.today)}-01`,
+    endDate: store.today,
+  }))
   const [grouped, setGrouped] = useState(true)
   const [category, setCategory] = useState<'ALL' | LedgerCategory>('ALL')
+  const [adjusting, setAdjusting] = useState(false)
 
   const brandName = (brandId: string | null) =>
     brandId === null ? 'Shared' : (store.brands.find((b) => b.id === brandId)?.name ?? '—')
 
   // Balance is cumulative, so it is computed over the whole ledger and then
-  // sliced — never recomputed from the visible month, which would restart it
+  // sliced — never recomputed from the visible range, which would restart it
   // from zero and be quietly wrong.
   const rows = useMemo(() => {
     const source = grouped ? groupDailySales(store.ledger) : store.ledger
     const all = withRunningBalance(source)
-    return all
-      .filter((row) => monthOf(row.businessDate) === month)
+    return inRange(all, range.startDate, range.endDate)
       .filter((row) => category === 'ALL' || row.category === category)
       .toReversed()
-  }, [store.ledger, grouped, month, category])
+  }, [store.ledger, grouped, range, category])
 
-  const unreconciled = useMemo(
-    () => store.shifts.filter((shift) => shift.reconciliationStatus === 'UNRECONCILED'),
-    [store.shifts],
-  )
-
-  const monthTotals = useMemo(() => {
-    const monthRows = withRunningBalance(store.ledger).filter(
-      (row) => monthOf(row.businessDate) === month,
+  const totals = useMemo(() => {
+    const periodRows = inRange(
+      withRunningBalance(store.ledger),
+      range.startDate,
+      range.endDate,
     )
     return {
-      inSen: monthRows.reduce((sum, row) => sum + row.moneyInSen, 0),
-      outSen: monthRows.reduce((sum, row) => sum + row.moneyOutSen, 0),
-      closingSen: monthRows.at(-1)?.balanceSen ?? 0,
+      inSen: periodRows.reduce((sum, row) => sum + row.moneyInSen, 0),
+      outSen: periodRows.reduce((sum, row) => sum + row.moneyOutSen, 0),
+      closingSen: periodRows.at(-1)?.balanceSen ?? 0,
     }
-  }, [store.ledger, month])
+  }, [store.ledger, range])
+
+  // Every closed shift in the window, newest first. This is an audit column, not
+  // an alert: a difference sits here quietly until the owner decides what it was.
+  const closes = useMemo(
+    () =>
+      inRange(store.shifts, range.startDate, range.endDate)
+        .filter((shift) => shift.closedAt !== null)
+        .toSorted((a, b) => b.businessDate.localeCompare(a.businessDate)),
+    [store.shifts, range],
+  )
+
+  const unexplained = closes.filter((shift) => shift.reconciliationStatus === 'UNRECONCILED')
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <div className="border-b border-line pb-5">
-        <p className="page-kicker">Money movement / cash book</p>
-        <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Cashflow</h1>
-        <p className="mt-2 max-w-3xl text-sm text-muted">
-          Every ringgit in and out. History is never edited — a correction is its own entry.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-5">
+        <div>
+          <p className="page-kicker">Money movement / cash book</p>
+          <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Cashflow</h1>
+          <p className="mt-2 max-w-3xl text-sm text-muted">
+            Every ringgit in and out for {formatRange(range)}. History is never edited — a
+            correction is its own entry.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setAdjusting(true)}
+          className="vista-button-primary flex min-h-12 items-center gap-2 px-4"
+        >
+          <Scale aria-hidden="true" className="size-4" />
+          Adjust balance
+        </button>
       </div>
 
-      {unreconciled.length > 0 ? (
-        <Panel className="border-t-2 border-t-warning">
-          <div className="flex flex-wrap items-center gap-3">
-            <ScanLine aria-hidden="true" className="size-5 shrink-0 text-warning" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-black">
-                {unreconciled.length} shift{unreconciled.length === 1 ? '' : 's'} where the bank
-                total did not match
-              </p>
-              <p className="text-xs font-semibold text-muted">
-                Until you say what the difference was, this balance is incomplete.
-              </p>
-            </div>
-          </div>
-          <ul className="mt-3 space-y-2">
-            {unreconciled.map((shift) => (
-              <li
-                key={shift.id}
-                className="flex flex-wrap items-center gap-3 border border-amber-200 bg-amber-50 p-3"
-              >
-                <span className="text-sm font-black">{formatDate(shift.businessDate)}</span>
-                <span className="text-xs font-semibold text-muted">
-                  Recorded {formatRinggit(shift.systemNetSalesSen ?? 0)} · bank said{' '}
-                  {formatRinggit(shift.declaredBankTotalSen ?? 0)}
-                </span>
-                <span className="tabular text-sm font-black text-serious">
-                  {formatRinggit(shift.varianceSen ?? 0)}
-                </span>
-                <div className="ml-auto flex flex-wrap gap-2">
-                  {['Bank fee', 'Sale never recorded', 'Cashier error'].map((reason) => (
-                    <button
-                      key={reason}
-                      type="button"
-                      onClick={() => store.reconcileShift(shift.id, `${reason} · ${formatDate(shift.businessDate)}`)}
-                      className="vista-button-primary"
-                    >
-                      {reason}
-                    </button>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Panel>
-      ) : null}
+      <DateRangePicker value={range} onChange={setRange} today={store.today} />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Panel>
           <p className="text-xs font-bold uppercase tracking-wider text-muted">Money in</p>
           <p className="mt-1 text-xl font-black tabular text-good">
-            {formatRinggit(monthTotals.inSen)}
+            {formatRinggit(totals.inSen)}
           </p>
         </Panel>
         <Panel>
           <p className="text-xs font-bold uppercase tracking-wider text-muted">Money out</p>
           <p className="mt-1 text-xl font-black tabular text-serious">
-            {formatRinggit(monthTotals.outSen)}
+            {formatRinggit(totals.outSen)}
           </p>
         </Panel>
         <Panel>
           <p className="text-xs font-bold uppercase tracking-wider text-muted">Closing balance</p>
-          <p className="mt-1 text-xl font-black tabular">{formatRinggit(monthTotals.closingSen)}</p>
+          <p className="mt-1 text-xl font-black tabular">{formatRinggit(totals.closingSen)}</p>
         </Panel>
       </div>
 
       <Panel>
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <select
-            value={month}
-            onChange={(event) => setMonth(event.target.value)}
-            className="vista-control px-3"
-          >
-            {months.map((value) => (
-              <option key={value} value={value}>
-                {formatMonth(value)}
-              </option>
-            ))}
-          </select>
-
           <select
             value={category}
             onChange={(event) => setCategory(event.target.value as 'ALL' | LedgerCategory)}
@@ -227,7 +198,15 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
                   </td>
                   <td className="py-2 font-semibold text-ink">{row.description}</td>
                   <td className="py-2">
-                    <Badge tone={row.category === 'RECONCILIATION_ADJUSTMENT' ? 'warning' : 'neutral'}>
+                    <Badge
+                      tone={
+                        row.category === 'RECONCILIATION_ADJUSTMENT'
+                          ? 'warning'
+                          : row.category === 'REFUND'
+                            ? 'info'
+                            : 'neutral'
+                      }
+                    >
                       {CATEGORY_LABEL[row.category]}
                     </Badge>
                   </td>
@@ -249,17 +228,259 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
 
         {rows.length === 0 ? (
           <p className="py-8 text-center text-sm font-semibold text-muted">
-            Nothing in this month for that filter.
+            Nothing in this range for that filter.
           </p>
         ) : (
           <p className="pt-3 text-xs font-semibold text-muted">
             {rows.length} entries · newest first.{' '}
             {grouped
-              ? 'Daily sales are rolled up; untick to see every order.'
+              ? 'Daily sales are rolled up; untick to see every order. Refunds always keep their own line.'
               : 'Showing every individual sale.'}
           </p>
         )}
       </Panel>
+
+      {closes.length > 0 ? (
+        <Panel>
+          <SectionHeading
+            title="Shift closes"
+            hint="What the system recorded against what the bank said. Nothing here asks you to act — use Adjust balance when you have decided what a difference was."
+          />
+          <div className="scrollbar-subtle -mx-4 overflow-x-auto px-4">
+            <table className="w-full min-w-[38rem] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-muted">
+                  <th className="py-2 text-left font-bold">Date</th>
+                  <th className="py-2 text-right font-bold">Recorded</th>
+                  <th className="py-2 text-right font-bold">Bank said</th>
+                  <th className="py-2 pr-6 text-right font-bold">Difference</th>
+                  <th className="py-2 text-left font-bold">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {closes.map((shift) => (
+                  <tr key={shift.id} className="border-b border-slate-100">
+                    <td className="whitespace-nowrap py-2 font-semibold">
+                      {formatDate(shift.businessDate)}
+                    </td>
+                    <td className="py-2 text-right tabular">
+                      {formatRinggit(shift.systemNetSalesSen ?? 0)}
+                    </td>
+                    <td className="py-2 text-right tabular">
+                      {shift.declaredBankTotalSen === null ? (
+                        <span className="text-slate-300">not declared</span>
+                      ) : (
+                        formatRinggit(shift.declaredBankTotalSen)
+                      )}
+                    </td>
+                    <td className="py-2 pr-6 text-right font-bold tabular">
+                      {shift.varianceSen === null || shift.varianceSen === 0 ? (
+                        <span className="text-slate-300">—</span>
+                      ) : (
+                        <span className="text-serious">{formatRinggit(shift.varianceSen)}</span>
+                      )}
+                    </td>
+                    <td className="py-2 text-xs font-bold text-muted">
+                      {shift.reconciliationStatus === 'RECONCILED'
+                        ? 'Explained'
+                        : shift.reconciliationStatus === 'NOT_REQUIRED'
+                          ? 'Matched'
+                          : 'Unexplained'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {unexplained.length > 0 ? (
+            <p className="pt-3 text-xs font-semibold text-muted">
+              {unexplained.length} close{unexplained.length === 1 ? '' : 's'} with a difference
+              nobody has explained. The balance above is off by that much until you say what it
+              was.
+            </p>
+          ) : null}
+        </Panel>
+      ) : null}
+
+      {adjusting ? (
+        <AdjustBalanceDialog
+          store={store}
+          shifts={closes}
+          onClose={() => setAdjusting(false)}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * The owner's one lever over the cash balance.
+ *
+ * Writes a single `RECONCILIATION_ADJUSTMENT` entry rather than editing
+ * anything: a bank fee, a sale that never got rung up, a cashier's miscount. It
+ * pre-fills from a shift's variance when one is chosen, because that is the
+ * common case, but the amount stays editable — the owner may know the difference
+ * was two separate things.
+ */
+function AdjustBalanceDialog({
+  store,
+  shifts,
+  onClose,
+}: {
+  store: VistaStore
+  shifts: ReadonlyArray<VistaStore['shifts'][number]>
+  onClose: () => void
+}) {
+  const [amount, setAmount] = useState('')
+  const [direction, setDirection] = useState<LedgerDirection>('MONEY_OUT')
+  const [description, setDescription] = useState('')
+  const [businessDate, setBusinessDate] = useState(store.today)
+  const [shiftId, setShiftId] = useState<string>('')
+
+  const amountSen = parseRinggitToSen(amount)
+  const canSave = amountSen !== null && amountSen > 0 && description.trim().length > 0
+
+  function pickShift(id: string) {
+    setShiftId(id)
+    const shift = shifts.find((candidate) => candidate.id === id)
+    if (!shift) return
+    setBusinessDate(shift.businessDate)
+    const variance = shift.varianceSen
+    if (variance !== null && variance !== 0) {
+      setAmount((Math.abs(variance) / 100).toFixed(2))
+      // A positive variance means the bank held more than the system recorded, so
+      // the correcting entry is money in.
+      setDirection(variance > 0 ? 'MONEY_IN' : 'MONEY_OUT')
+    }
+  }
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!canSave || amountSen === null) return
+    store.adjustBalance({
+      businessDate,
+      amountSen,
+      direction,
+      description: description.trim(),
+      shiftId: shiftId === '' ? null : shiftId,
+    })
+    onClose()
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-5"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="adjust-balance"
+    >
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-lg border border-line bg-surface p-6 shadow-2xl"
+      >
+        <h2 id="adjust-balance" className="text-xl font-black">
+          Adjust the balance
+        </h2>
+        <p className="mt-2 text-sm text-muted">
+          Writes one reconciliation entry in the cash book. Nothing already recorded changes.
+        </p>
+
+        <div className="mt-5 space-y-4">
+          <label className="block">
+            <span className="vista-field-label">Against a shift close (optional)</span>
+            <select
+              value={shiftId}
+              onChange={(event) => pickShift(event.target.value)}
+              className="vista-control mt-1 w-full px-3"
+            >
+              <option value="">Not tied to a shift</option>
+              {shifts.map((shift) => (
+                <option key={shift.id} value={shift.id}>
+                  {formatDate(shift.businessDate)}
+                  {shift.varianceSen ? ` · off by ${formatRinggit(shift.varianceSen)}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="vista-field-label">Amount (RM)</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="0.00"
+                className="vista-control mt-1 w-full px-3 tabular"
+              />
+            </label>
+            <label className="block">
+              <span className="vista-field-label">Date</span>
+              <input
+                type="date"
+                value={businessDate}
+                onChange={(event) => event.target.value && setBusinessDate(event.target.value)}
+                className="vista-control mt-1 w-full px-3"
+              />
+            </label>
+          </div>
+
+          <div>
+            <span className="vista-field-label">Direction</span>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDirection('MONEY_IN')}
+                aria-pressed={direction === 'MONEY_IN'}
+                className={`min-h-12 border text-sm font-bold ${
+                  direction === 'MONEY_IN'
+                    ? 'border-good bg-good text-white'
+                    : 'border-line bg-surface text-slate-700 hover:bg-canvas'
+                }`}
+              >
+                Money in · balance was short
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirection('MONEY_OUT')}
+                aria-pressed={direction === 'MONEY_OUT'}
+                className={`min-h-12 border text-sm font-bold ${
+                  direction === 'MONEY_OUT'
+                    ? 'border-serious bg-serious text-white'
+                    : 'border-line bg-surface text-slate-700 hover:bg-canvas'
+                }`}
+              >
+                Money out · balance was over
+              </button>
+            </div>
+          </div>
+
+          <label className="block">
+            <span className="vista-field-label">What was it?</span>
+            <input
+              type="text"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Bank transfer fee"
+              className="vista-control mt-1 w-full px-3"
+            />
+            <span className="mt-1 block text-xs font-semibold text-muted">
+              This is the only record of why the balance moved, so write it for someone reading
+              it in six months.
+            </span>
+          </label>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button type="button" onClick={onClose} className="vista-button-secondary min-h-12">
+            Cancel
+          </button>
+          <button type="submit" disabled={!canSave} className="vista-button-primary min-h-12">
+            Write the entry
+          </button>
+        </div>
+      </form>
     </div>
   )
 }

@@ -62,12 +62,14 @@ the ratio in Settings applies from now on and can never quietly rewrite a closed
 slider only appears for a *shared* cost — applying 70/30 to a direct Food restock would bleed 30%
 of it onto Drinks and corrupt both brands' results.
 
-**A partner who pays out of pocket is not owed the whole amount.** Their own brand's share was
-always theirs to bear; only the counterparty's share is a debt. Settlement shows the RM 2,400
-chiller as RM 1,200 owed, not RM 2,400.
+**A partner who pays out of pocket is reimbursed in full.** Both brands already bear their share
+through the expense split in the operating result. Reimbursing only the counterparty's portion
+would make the paying partner bear their own portion twice.
 
-**Paid sales are immutable.** Resolving a flag never edits one — a refund writes its own reversing
-entry.
+**Paid sales are immutable.** A counter cancel or exchange never edits one — it writes its own
+linked reversing entry. Cashier corrections appear on the Owner's desk for oversight, link to
+their ungrouped Cashflow rows, and flow through net sales, brand split, daily chart, and live
+counter takings rather than being hidden inside the original order.
 
 ## Charts
 
@@ -88,13 +90,15 @@ neither Vista app ships one.
 
 `src/data/fake/generate.ts` produces five weeks of trading from a fixed seed: weekday/weekend
 variation, Mondays closed, rent and utilities on their usual dates, restocks, three partner
-drawings, a chiller the Drinks partner paid for and has never been reimbursed for, two flagged
-sales, one sale priced offline against a stale menu, and one shift whose bank total was RM 18.50
-short. Thin data makes a bad dashboard look fine, which is why it is not thin.
+drawings, a chiller the Drinks partner paid for and has never been reimbursed for, two historical
+flagged sales, two cashier corrections, one sale priced offline against a stale menu, and one shift
+whose bank total was RM 18.50 short. Thin data makes a bad dashboard look fine, which is why it is
+not thin.
 
 ## Tests
 
-`src/domain/finance.test.ts` — 14 tests over the settlement maths: shared splits summing exactly,
+31 tests cover the settlement maths and correction reporting: shared splits summing exactly,
 the host cut clamped at zero on a loss, a deficit carried forward and then recovered across
 periods, capital assets excluded from the operating result, the stored split winning over the
-current setting, and the running balance ordering by business date.
+current setting, running balance ordering by business date, same-price cross-brand exchanges,
+owner activity cards, and corrected live takings.
