@@ -269,17 +269,19 @@ export function generateHistory(): FakeHistory {
       continue
     }
 
-    const isUnreconciled = businessDate === unreconciledDate
-    const declared = isUnreconciled ? dayNetSen - 1_850 : dayNetSen
+    // Shift close declares no bank figure, so no demo shift carries one. The one
+    // UNRECONCILED day stands for "takings changed after close" — a sale that
+    // synced late — which is the only thing that status now means.
+    const changedAfterClose = businessDate === unreconciledDate
     shifts.push({
       id: shiftId,
       businessDate,
       openedAt: `${businessDate}T12:00:00Z`,
       closedAt: `${businessDate}T19:30:00Z`,
       systemNetSalesSen: dayNetSen,
-      declaredBankTotalSen: declared,
-      varianceSen: declared - dayNetSen,
-      reconciliationStatus: isUnreconciled ? 'UNRECONCILED' : 'NOT_REQUIRED',
+      declaredBankTotalSen: null,
+      varianceSen: null,
+      reconciliationStatus: changedAfterClose ? 'UNRECONCILED' : 'NOT_REQUIRED',
     })
   }
 

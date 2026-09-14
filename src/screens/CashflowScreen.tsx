@@ -97,8 +97,9 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
     }
   }, [store.ledger, range])
 
-  // Every closed shift in the window, newest first. This is an audit column, not
-  // an alert: a difference sits here quietly until the owner decides what it was.
+  // Every closed shift in the window, newest first. The cashier declares no bank
+  // figure at close, so this is what each shift recorded — for the owner to hold
+  // up against the bank statement. It asks nothing of anyone.
   const closes = useMemo(
     () =>
       inRange(store.shifts, range.startDate, range.endDate)
@@ -107,7 +108,11 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
     [store.shifts, range],
   )
 
-  const unexplained = closes.filter((shift) => shift.reconciliationStatus === 'UNRECONCILED')
+  // UNRECONCILED now means one thing: the takings moved after the shift closed,
+  // because a sale or correction reached the server late.
+  const changedAfterClose = closes.filter(
+    (shift) => shift.reconciliationStatus === 'UNRECONCILED',
+  )
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -244,16 +249,14 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
         <Panel>
           <SectionHeading
             title="Shift closes"
-            hint="What the system recorded against what the bank said. Nothing here asks you to act — use Adjust balance when you have decided what a difference was."
+            hint="What each shift recorded when it closed. Check it against the bank statement; if something is off, use Adjust balance."
           />
           <div className="scrollbar-subtle -mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[38rem] text-sm">
+            <table className="w-full min-w-[28rem] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-muted">
                   <th className="py-2 text-left font-bold">Date</th>
-                  <th className="py-2 text-right font-bold">Recorded</th>
-                  <th className="py-2 text-right font-bold">Bank said</th>
-                  <th className="py-2 pr-6 text-right font-bold">Difference</th>
+                  <th className="py-2 pr-6 text-right font-bold">Takings recorded</th>
                   <th className="py-2 text-left font-bold">State</th>
                 </tr>
               </thead>
@@ -263,40 +266,26 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
                     <td className="whitespace-nowrap py-2 font-semibold">
                       {formatDate(shift.businessDate)}
                     </td>
-                    <td className="py-2 text-right tabular">
+                    <td className="py-2 pr-6 text-right tabular">
                       {formatRinggit(shift.systemNetSalesSen ?? 0)}
-                    </td>
-                    <td className="py-2 text-right tabular">
-                      {shift.declaredBankTotalSen === null ? (
-                        <span className="text-slate-300">not declared</span>
-                      ) : (
-                        formatRinggit(shift.declaredBankTotalSen)
-                      )}
-                    </td>
-                    <td className="py-2 pr-6 text-right font-bold tabular">
-                      {shift.varianceSen === null || shift.varianceSen === 0 ? (
-                        <span className="text-slate-300">—</span>
-                      ) : (
-                        <span className="text-serious">{formatRinggit(shift.varianceSen)}</span>
-                      )}
                     </td>
                     <td className="py-2 text-xs font-bold text-muted">
                       {shift.reconciliationStatus === 'RECONCILED'
-                        ? 'Explained'
-                        : shift.reconciliationStatus === 'NOT_REQUIRED'
-                          ? 'Matched'
-                          : 'Unexplained'}
+                        ? 'Adjusted'
+                        : shift.reconciliationStatus === 'UNRECONCILED'
+                          ? 'Changed after close'
+                          : 'Closed'}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {unexplained.length > 0 ? (
+          {changedAfterClose.length > 0 ? (
             <p className="pt-3 text-xs font-semibold text-muted">
-              {unexplained.length} close{unexplained.length === 1 ? '' : 's'} with a difference
-              nobody has explained. The balance above is off by that much until you say what it
-              was.
+              {changedAfterClose.length} shift{changedAfterClose.length === 1 ? '' : 's'} took a
+              sale or correction after closing, so the takings above moved after the fact. Worth
+              a look against the bank.
             </p>
           ) : null}
         </Panel>
@@ -317,10 +306,9 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
  * The owner's one lever over the cash balance.
  *
  * Writes a single `RECONCILIATION_ADJUSTMENT` entry rather than editing
- * anything: a bank fee, a sale that never got rung up, a cashier's miscount. It
- * pre-fills from a shift's variance when one is chosen, because that is the
- * common case, but the amount stays editable — the owner may know the difference
- * was two separate things.
+ * anything: a bank fee, a sale that never got rung up, a cashier's miscount.
+ * Tying it to a shift is optional and only records which close prompted it; the
+ * amount always comes from the owner, who has the bank statement in front of them.
  */
 function AdjustBalanceDialog({
   store,
@@ -345,13 +333,6 @@ function AdjustBalanceDialog({
     const shift = shifts.find((candidate) => candidate.id === id)
     if (!shift) return
     setBusinessDate(shift.businessDate)
-    const variance = shift.varianceSen
-    if (variance !== null && variance !== 0) {
-      setAmount((Math.abs(variance) / 100).toFixed(2))
-      // A positive variance means the bank held more than the system recorded, so
-      // the correcting entry is money in.
-      setDirection(variance > 0 ? 'MONEY_IN' : 'MONEY_OUT')
-    }
   }
 
   function handleSubmit(event: FormEvent) {
@@ -396,8 +377,8 @@ function AdjustBalanceDialog({
               <option value="">Not tied to a shift</option>
               {shifts.map((shift) => (
                 <option key={shift.id} value={shift.id}>
-                  {formatDate(shift.businessDate)}
-                  {shift.varianceSen ? ` · off by ${formatRinggit(shift.varianceSen)}` : ''}
+                  {formatDate(shift.businessDate)} · {formatRinggit(shift.systemNetSalesSen ?? 0)}{' '}
+                  recorded
                 </option>
               ))}
             </select>
