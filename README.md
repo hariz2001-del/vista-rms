@@ -3,6 +3,8 @@
 React + Vite dashboard for the owners of the Vista counter. English throughout, integer sen
 throughout, light mode only — the same choices as the POS.
 
+Part of the Vista system: [vista-pos](https://github.com/hariz2001-del/vista-pos) (cashier) · **vista-rms** (owner dashboard) · [vista-api](https://github.com/hariz2001-del/vista-api) (backend).
+
 **Status: UI round.** Runs entirely on generated demo data (`src/data/fake/`) with an in-memory
 store standing in for the API. `api-vista` has the money path but not expenses, ledger reporting
 or settlement yet, so wiring this to it is the next step, not this one.
