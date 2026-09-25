@@ -71,8 +71,12 @@ export type MenuEdit =
       description: string
       basePriceSen: number
       imageUrl: string | null
+      /** Option groups of other items to copy onto the new one. */
+      copyGroupIds: string[]
     }
   | { kind: 'updateProduct'; id: string; changes: ProductChanges }
+  /** Copy another item's option group, with its options, onto this one. */
+  | { kind: 'copyGroup'; productId: string; groupId: string }
   | { kind: 'deleteProduct'; id: string }
   | { kind: 'addGroup'; productId: string; name: string; minSelect: number; maxSelect: number }
   | { kind: 'updateGroup'; id: string; name?: string; minSelect?: number; maxSelect?: number }

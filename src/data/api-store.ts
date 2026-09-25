@@ -94,10 +94,13 @@ function menuRequest(edit: MenuEdit): ['POST' | 'PATCH' | 'DELETE', string, obje
           description: edit.description,
           basePriceSen: edit.basePriceSen,
           imageUrl: edit.imageUrl,
+          copyGroupIds: edit.copyGroupIds,
         },
       ]
     case 'updateProduct':
       return ['PATCH', `/rms/products/${edit.id}`, edit.changes]
+    case 'copyGroup':
+      return ['POST', `/rms/products/${edit.productId}/groups/copy`, { groupId: edit.groupId }]
     case 'deleteProduct':
       return ['DELETE', `/rms/products/${edit.id}`]
     case 'addGroup':
