@@ -226,12 +226,27 @@ export type Partner = {
  * A discount preset for a promo. The cashier picks it from the discount screen
  * for one item or the whole order, on business dates inside its range.
  */
+export type PromotionTarget = {
+  /** Exactly one of an item or a category. */
+  productId: string | null
+  categoryId: string | null
+  /** For a combo: how many of it the combo needs. */
+  quantity: number
+}
+
 export type Promotion = {
   id: string
   name: string
   /** PERCENT: `value` is 1–100. AMOUNT: `value` is sen off. */
   kind: 'PERCENT' | 'AMOUNT'
   value: number
+  /** Off the whole order; off certain items; or off a combo bought together. */
+  scope: 'ORDER' | 'ITEMS' | 'COMBO'
+  /** Whole-order promos: applied to every order without the cashier picking it. Item and combo promos always are. */
+  autoApply: boolean
+  /** Every matching item or complete combo, or once per receipt. */
+  limit: 'EACH' | 'ONCE_PER_ORDER'
+  targets: PromotionTarget[]
   startsOn: string
   /** Null runs until switched off. */
   endsOn: string | null
