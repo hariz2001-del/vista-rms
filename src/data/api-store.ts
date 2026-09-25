@@ -70,7 +70,7 @@ const EMPTY_TERMINAL: TerminalStatus = {
 }
 
 /** The route each menu change goes to. */
-function menuRequest(edit: MenuEdit): ['POST' | 'PATCH' | 'DELETE', string, object?] {
+function menuRequest(edit: MenuEdit): ['POST' | 'PUT' | 'PATCH' | 'DELETE', string, object?] {
   switch (edit.kind) {
     case 'addBrand':
       return ['POST', '/rms/brands', { name: edit.name, colour: edit.colour }]
@@ -131,6 +131,14 @@ function menuRequest(edit: MenuEdit): ['POST' | 'PATCH' | 'DELETE', string, obje
       ]
     case 'deleteOption':
       return ['DELETE', `/rms/options/${edit.id}`]
+    case 'orderCategories':
+      return ['PUT', '/rms/categories/order', { ids: edit.ids }]
+    case 'orderProducts':
+      return ['PUT', `/rms/categories/${edit.categoryId}/products`, { ids: edit.ids }]
+    case 'orderGroups':
+      return ['PUT', `/rms/products/${edit.productId}/groups/order`, { ids: edit.ids }]
+    case 'orderOptions':
+      return ['PUT', `/rms/groups/${edit.groupId}/options/order`, { ids: edit.ids }]
   }
 }
 
