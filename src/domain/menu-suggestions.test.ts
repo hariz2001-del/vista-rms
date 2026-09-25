@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isCommon, suggestGroups } from './menu-suggestions.ts'
+import { isCommon, suggestFromElsewhere, suggestGroups } from './menu-suggestions.ts'
 import type { ModifierGroup, Product } from './types.ts'
 
 function group(id: string, name: string, options: Array<[string, number]>, min = 0, max = 1): ModifierGroup {
@@ -79,6 +79,31 @@ describe('suggested option groups', () => {
   it('skips empty groups, and suggests nothing in an empty category', () => {
     expect(suggestGroups([product('a', 'x', [group('e', 'Empty', [])])], 'x')).toEqual([])
     expect(suggestGroups(menu, 'desserts')).toEqual([])
+  })
+
+  it('also offers groups from other categories, leaving out what the category already offers', () => {
+    const withTea = [
+      ...menu,
+      product('teh', 'tea', [group('t1', 'Sugar', [['Less', 0]])]),
+      product('limau', 'tea', [SIZE('t2')]),
+    ]
+    // A new coffee: Cup size comes from Coffee itself, so "elsewhere" does not repeat it.
+    const elsewhere = suggestFromElsewhere(withTea, 'coffee')
+    expect(elsewhere.map((s) => [s.group.name, s.usedBy, s.of, s.categoryIds])).toEqual([
+      ['Spice level', 1, 3, ['rice']],
+      ['Sugar', 1, 3, ['tea']],
+    ])
+
+    // A brand-new category: everything on the menu is on offer, across categories.
+    const fresh = suggestFromElsewhere(withTea, 'desserts')
+    expect(fresh[0]).toMatchObject({ usedBy: 4, of: 6, categoryIds: ['coffee', 'tea'] })
+    expect(fresh[0]?.group.name).toBe('Cup size')
+    expect(suggestGroups(withTea, 'desserts')).toEqual([])
+  })
+
+  it('leaves out of "elsewhere" what the item already has', () => {
+    const elsewhere = suggestFromElsewhere(menu, 'rice', null, [group('x', 'cup size', [['A', 0]])])
+    expect(elsewhere.map((s) => s.group.name)).toEqual(['Extra shot', 'Milk'])
   })
 
   it('pre-ticks a group for a new item only when at least half the category has it', () => {

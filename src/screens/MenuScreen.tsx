@@ -21,7 +21,12 @@ import {
   reorderWithin,
   type Layout,
 } from '../domain/menu-order.ts'
-import { isCommon, suggestGroups, type GroupSuggestion } from '../domain/menu-suggestions.ts'
+import {
+  isCommon,
+  suggestFromElsewhere,
+  suggestGroups,
+  type GroupSuggestion,
+} from '../domain/menu-suggestions.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import type { Brand, Category, ModifierGroup, Product } from '../domain/types.ts'
 
@@ -209,37 +214,86 @@ function optionsPreview(group: ModifierGroup): string {
   return group.options.length > 3 ? `${shown.join(' · ')} · +${group.options.length - 3} more` : shown.join(' · ')
 }
 
+function SuggestionRows({
+  suggestions,
+  meta,
+  children,
+}: {
+  suggestions: GroupSuggestion[]
+  meta: (suggestion: GroupSuggestion) => string
+  children: (suggestion: GroupSuggestion) => ReactNode
+}) {
+  return (
+    <ul className="mt-2 space-y-2">
+      {suggestions.map((suggestion) => (
+        <li key={suggestion.group.id} className="flex flex-wrap items-center gap-2">
+          {children(suggestion)}
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-black">{suggestion.group.name}</span>
+            <span className="block truncate text-xs text-muted">{optionsPreview(suggestion.group)}</span>
+          </span>
+          <span className="font-mono text-[0.65rem] font-bold text-muted">{meta(suggestion)}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /**
- * Option groups the category's other items use, to copy onto this one. In the
- * new-item form they are tick boxes; in the editor, one tap adds each.
+ * Option groups the rest of the menu uses, to copy onto this item: first its
+ * own category's, then — folded away unless the category has none — every
+ * other category's. In the new-item form they are tick boxes; in the editor,
+ * one tap adds each.
  */
 function Suggestions({
   categoryName,
-  suggestions,
+  inCategory,
+  elsewhere,
+  categoryNameOf,
   children,
 }: {
   categoryName: string
-  suggestions: GroupSuggestion[]
+  inCategory: GroupSuggestion[]
+  elsewhere: GroupSuggestion[]
+  categoryNameOf: (categoryId: string) => string
   children: (suggestion: GroupSuggestion) => ReactNode
 }) {
-  if (suggestions.length === 0) return null
+  // Open from the start only when the item's own category has nothing to offer.
+  const [showElsewhere, setShowElsewhere] = useState(inCategory.length === 0)
+  if (inCategory.length === 0 && elsewhere.length === 0) return null
   return (
-    <div className="border border-dashed border-line bg-surface p-3">
-      <p className="vista-field-label">Suggested from {categoryName}</p>
-      <ul className="mt-2 space-y-2">
-        {suggestions.map((suggestion) => (
-          <li key={suggestion.group.id} className="flex flex-wrap items-center gap-2">
-            {children(suggestion)}
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-black">{suggestion.group.name}</span>
-              <span className="block truncate text-xs text-muted">{optionsPreview(suggestion.group)}</span>
+    <div className="space-y-3 border border-dashed border-line bg-surface p-3">
+      {inCategory.length > 0 ? (
+        <div>
+          <p className="vista-field-label">Suggested from {categoryName}</p>
+          <SuggestionRows suggestions={inCategory} meta={(s) => `on ${s.usedBy} of ${s.of} items`}>
+            {children}
+          </SuggestionRows>
+        </div>
+      ) : null}
+      {elsewhere.length > 0 ? (
+        <div>
+          <button
+            type="button"
+            aria-expanded={showElsewhere}
+            onClick={() => setShowElsewhere((open) => !open)}
+            className="vista-field-label flex min-h-9 items-center gap-1 hover:text-ink"
+          >
+            <span aria-hidden="true" className={`inline-block transition-transform ${showElsewhere ? 'rotate-90' : ''}`}>
+              ›
             </span>
-            <span className="font-mono text-[0.65rem] font-bold text-muted">
-              on {suggestion.usedBy} of {suggestion.of} items
-            </span>
-          </li>
-        ))}
-      </ul>
+            From other categories ({elsewhere.length})
+          </button>
+          {showElsewhere ? (
+            <SuggestionRows
+              suggestions={elsewhere}
+              meta={(s) => `${s.categoryIds.map(categoryNameOf).join(', ')} · ${s.usedBy} item${s.usedBy === 1 ? '' : 's'}`}
+            >
+              {children}
+            </SuggestionRows>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -316,11 +370,13 @@ function BrandsPanel({ store, edit }: { store: VistaStore; edit: Edit }) {
 function NewProductForm({
   category,
   products,
+  categories,
   edit,
   onDone,
 }: {
   category: Category
   products: Product[]
+  categories: Category[]
   edit: Edit
   onDone: () => void
 }) {
@@ -332,6 +388,7 @@ function NewProductForm({
   // Read once when the form opens: the category's options, with the ones most
   // of its items share already ticked.
   const [suggestions] = useState(() => suggestGroups(products, category.id))
+  const [elsewhere] = useState(() => suggestFromElsewhere(products, category.id))
   const [copying, setCopying] = useState<Set<string>>(
     () => new Set(suggestions.filter(isCommon).map((suggestion) => suggestion.group.id)),
   )
@@ -408,7 +465,12 @@ function NewProductForm({
           className="vista-control mt-1 w-full px-3"
         />
       </label>
-      <Suggestions categoryName={category.name} suggestions={suggestions}>
+      <Suggestions
+        categoryName={category.name}
+        inCategory={suggestions}
+        elsewhere={elsewhere}
+        categoryNameOf={(id) => categories.find((candidate) => candidate.id === id)?.name ?? '—'}
+      >
         {(suggestion) => (
           <input
             type="checkbox"
@@ -635,6 +697,10 @@ function ProductEditor({
     () => suggestGroups(products, product.categoryId, product.id, product.modifierGroups ?? []),
     [products, product.categoryId, product.id, product.modifierGroups],
   )
+  const elsewhere = useMemo(
+    () => suggestFromElsewhere(products, product.categoryId, product.id, product.modifierGroups ?? []),
+    [products, product.categoryId, product.id, product.modifierGroups],
+  )
   const categoryName = categories.find((category) => category.id === product.categoryId)?.name ?? 'this category'
 
   async function addSuggested(groupId: string) {
@@ -710,7 +776,12 @@ function ProductEditor({
               </div>
             )}
           </SortableList>
-          <Suggestions categoryName={categoryName} suggestions={suggestions}>
+          <Suggestions
+            categoryName={categoryName}
+            inCategory={suggestions}
+            elsewhere={elsewhere}
+            categoryNameOf={(id) => categories.find((candidate) => candidate.id === id)?.name ?? '—'}
+          >
             {(suggestion) => (
               <button
                 type="button"
@@ -1157,6 +1228,7 @@ export function MenuScreen({ store }: { store: VistaStore }) {
                       <NewProductForm
                         category={category}
                         products={store.products}
+                        categories={store.categories}
                         edit={edit}
                         onDone={() => setAddingTo(null)}
                       />
