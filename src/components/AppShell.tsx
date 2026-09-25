@@ -45,6 +45,8 @@ type Props = {
   businessName: string
   outletName: string
   attentionCount: number
+  /** Settlement is only for a business with partner settlement switched on. */
+  showSettlement?: boolean
   /** Rendered above the content, pinned across every screen. */
   banner?: ReactNode
   /** True when the figures are the generated demo history, not the real books. */
@@ -60,11 +62,14 @@ export function AppShell({
   businessName,
   outletName,
   attentionCount,
+  showSettlement = true,
   banner,
   isDemo = false,
   onSignOut,
   children,
 }: Props) {
+  const nav = showSettlement ? NAV : NAV.filter((item) => item.key !== 'settlement')
+
   return (
     <div className="paper-canvas min-h-dvh bg-canvas lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
       {/* Desktop rail */}
@@ -83,7 +88,7 @@ export function AppShell({
         </div>
 
         <nav aria-label="Primary" className="flex-1 py-5">
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const Icon = item.icon
             const isActive = current === item.key
             return (
@@ -155,8 +160,8 @@ export function AppShell({
         <main className="flex-1 p-4 pb-24 sm:p-7 lg:px-10 lg:py-8 xl:px-12">{children}</main>
 
         {/* Mobile tab bar — the owner reads this on a phone as often as a laptop. */}
-        <nav aria-label="Primary" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-line bg-surface/95 shadow-[0_-4px_18px_rgba(24,33,29,0.06)] backdrop-blur-sm lg:hidden">
-          {NAV.map((item) => {
+        <nav aria-label="Primary" className={`fixed inset-x-0 bottom-0 z-30 grid ${nav.length === 6 ? 'grid-cols-6' : 'grid-cols-5'} border-t border-line bg-surface/95 shadow-[0_-4px_18px_rgba(24,33,29,0.06)] backdrop-blur-sm lg:hidden`}>
+          {nav.map((item) => {
             const Icon = item.icon
             const isActive = current === item.key
             return (

@@ -54,6 +54,9 @@ function Chip({
 export function ExpensesScreen({ store }: { store: VistaStore }) {
   const foodBrand = store.brands[0]
   const drinksBrand = store.brands[1]
+  // Without partner settlement there is nobody to owe and nothing to split:
+  // every cost is paid from the business's own funds, whole.
+  const withSettlement = store.settings.settlementEnabled && drinksBrand !== undefined
 
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
@@ -74,17 +77,29 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (!canSave || amountSen === null || !foodBrand || !drinksBrand) return
+    if (!canSave || amountSen === null) return
 
-    store.addExpense({
-      businessDate: store.today,
-      amountSen,
-      category,
-      paidBy,
-      brandId: target === 'SHARED' ? null : target === 'FOOD' ? foodBrand.id : drinksBrand.id,
-      foodSplitPct: foodPct,
-      description: description.trim(),
-    })
+    if (!withSettlement || !foodBrand || !drinksBrand) {
+      store.addExpense({
+        businessDate: store.today,
+        amountSen,
+        category,
+        paidBy: 'STALL_FUNDS',
+        brandId: null,
+        foodSplitPct: 100,
+        description: description.trim(),
+      })
+    } else {
+      store.addExpense({
+        businessDate: store.today,
+        amountSen,
+        category,
+        paidBy,
+        brandId: target === 'SHARED' ? null : target === 'FOOD' ? foodBrand.id : drinksBrand.id,
+        foodSplitPct: foodPct,
+        description: description.trim(),
+      })
+    }
 
     setAmount('')
     setDescription('')
@@ -108,8 +123,9 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
         <p className="page-kicker">Spending / new entry</p>
         <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Expenses</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted">
-          Log what the stall spends. Only stall funds move the cashflow balance — a partner paying
-          out of pocket creates a debt instead.
+          {withSettlement
+            ? 'Log what the stall spends. Only stall funds move the cashflow balance — a partner paying out of pocket creates a debt instead.'
+            : 'Log what the business spends. Every cost comes out of the cashflow balance.'}
         </p>
       </div>
 
@@ -163,76 +179,80 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
               </div>
             </div>
 
-            <div>
-              <p className="vista-field-label">Who paid</p>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {PAID_BY.map((item) => (
-                  <Chip key={item.value} active={paidBy === item.value} onClick={() => setPaidBy(item.value)}>
-                    {item.label}
-                  </Chip>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="vista-field-label">Charge to</p>
-              <div className="mt-1 flex flex-wrap gap-2">
-                <Chip active={target === 'FOOD'} onClick={() => setTarget('FOOD')}>
-                  {foodBrand?.name ?? 'Food'}
-                </Chip>
-                <Chip active={target === 'DRINKS'} onClick={() => setTarget('DRINKS')}>
-                  {drinksBrand?.name ?? 'Drinks'}
-                </Chip>
-                <Chip active={target === 'SHARED'} onClick={() => setTarget('SHARED')}>
-                  Shared
-                </Chip>
-              </div>
-            </div>
-
-            {/*
-              The split appears only for a shared cost. Applying a 70/30 ratio to
-              a direct expense would bleed 30% of every Food restock onto Drinks
-              and quietly corrupt both brands' results.
-            */}
-            {target === 'SHARED' ? (
-              <div className="border border-line bg-canvas p-3">
-                <div className="flex items-center justify-between text-xs font-black">
-                  <span style={{ color: foodBrand?.chartColour }}>
-                    {foodBrand?.name} {foodPct}%
-                  </span>
-                  <span style={{ color: drinksBrand?.chartColour }}>
-                    {drinksBrand?.name} {100 - foodPct}%
-                  </span>
+            {withSettlement ? (
+              <>
+                <div>
+                  <p className="vista-field-label">Who paid</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {PAID_BY.map((item) => (
+                      <Chip key={item.value} active={paidBy === item.value} onClick={() => setPaidBy(item.value)}>
+                        {item.label}
+                      </Chip>
+                    ))}
+                  </div>
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={foodPct}
-                  onChange={(event) => setFoodPct(Number(event.target.value))}
-                  aria-label="Share borne by Food"
-                  className="mt-2 w-full"
-                />
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {[70, 50, 30].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setFoodPct(preset)}
-                      className="border border-line bg-surface px-2 py-1 text-xs font-bold text-slate-600"
-                    >
-                      {preset}/{100 - preset}
-                    </button>
-                  ))}
+
+                <div>
+                  <p className="vista-field-label">Charge to</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    <Chip active={target === 'FOOD'} onClick={() => setTarget('FOOD')}>
+                      {foodBrand?.name ?? 'Food'}
+                    </Chip>
+                    <Chip active={target === 'DRINKS'} onClick={() => setTarget('DRINKS')}>
+                      {drinksBrand?.name ?? 'Drinks'}
+                    </Chip>
+                    <Chip active={target === 'SHARED'} onClick={() => setTarget('SHARED')}>
+                      Shared
+                    </Chip>
+                  </div>
                 </div>
-                {preview ? (
-                  <p className="mt-2 text-xs font-bold text-muted tabular">
-                    {foodBrand?.name} {formatRinggit(preview.foodSen)} · {drinksBrand?.name}{' '}
-                    {formatRinggit(preview.drinksSen)}
-                  </p>
+
+                {/*
+                  The split appears only for a shared cost. Applying a 70/30 ratio to
+                  a direct expense would bleed 30% of every Food restock onto Drinks
+                  and quietly corrupt both brands' results.
+                */}
+                {target === 'SHARED' ? (
+                  <div className="border border-line bg-canvas p-3">
+                    <div className="flex items-center justify-between text-xs font-black">
+                      <span style={{ color: foodBrand?.chartColour }}>
+                        {foodBrand?.name} {foodPct}%
+                      </span>
+                      <span style={{ color: drinksBrand?.chartColour }}>
+                        {drinksBrand?.name} {100 - foodPct}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={foodPct}
+                      onChange={(event) => setFoodPct(Number(event.target.value))}
+                      aria-label="Share borne by Food"
+                      className="mt-2 w-full"
+                    />
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {[70, 50, 30].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setFoodPct(preset)}
+                          className="border border-line bg-surface px-2 py-1 text-xs font-bold text-slate-600"
+                        >
+                          {preset}/{100 - preset}
+                        </button>
+                      ))}
+                    </div>
+                    {preview ? (
+                      <p className="mt-2 text-xs font-bold text-muted tabular">
+                        {foodBrand?.name} {formatRinggit(preview.foodSen)} · {drinksBrand?.name}{' '}
+                        {formatRinggit(preview.drinksSen)}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
-              </div>
+              </>
             ) : null}
 
             <button
@@ -280,12 +300,16 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
                     <span>{formatDate(expense.businessDate)}</span>
                     <span>·</span>
                     <span>{CATEGORY_LABEL[expense.category]}</span>
-                    <span>·</span>
-                    <span>
-                      {expense.brandId === null
-                        ? `Shared ${expense.foodSplitPct}/${100 - expense.foodSplitPct}`
-                        : (store.brands.find((b) => b.id === expense.brandId)?.name ?? '—')}
-                    </span>
+                    {withSettlement ? (
+                      <>
+                        <span>·</span>
+                        <span>
+                          {expense.brandId === null
+                            ? `Shared ${expense.foodSplitPct}/${100 - expense.foodSplitPct}`
+                            : (store.brands.find((b) => b.id === expense.brandId)?.name ?? '—')}
+                        </span>
+                      </>
+                    ) : null}
                   </p>
                 </div>
 

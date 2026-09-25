@@ -4,6 +4,7 @@ import { generateHistory, PERIOD_START, TODAY } from './generate.ts'
 export const ACCOUNT: AccountSettings = {
   businessName: 'Vista Demo Enterprise',
   outletName: 'Vista Counter · Section 7',
+  settlementEnabled: true,
   sharedOverheadFoodPct: 70,
   hostCommissionPct: 30,
   capitalAssetFoodPct: 50,

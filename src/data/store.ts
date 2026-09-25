@@ -45,7 +45,62 @@ export type BalanceAdjustment = {
   shiftId: string | null
 }
 
+/** A product field the owner can change. Omitted fields are left as they are. */
+export type ProductChanges = {
+  categoryId?: string
+  name?: string
+  description?: string
+  basePriceSen?: number
+  imageUrl?: string | null
+  isSoldOut?: boolean
+  isActive?: boolean
+}
+
+/** One change to the menu, from the menu builder. */
+export type MenuEdit =
+  | { kind: 'addBrand'; name: string; colour: string }
+  | { kind: 'updateBrand'; id: string; name?: string; colour?: string }
+  | { kind: 'deleteBrand'; id: string }
+  | { kind: 'addCategory'; brandId: string; name: string }
+  | { kind: 'renameCategory'; id: string; name: string }
+  | { kind: 'deleteCategory'; id: string }
+  | {
+      kind: 'addProduct'
+      categoryId: string
+      name: string
+      description: string
+      basePriceSen: number
+      imageUrl: string | null
+    }
+  | { kind: 'updateProduct'; id: string; changes: ProductChanges }
+  | { kind: 'deleteProduct'; id: string }
+  | { kind: 'addGroup'; productId: string; name: string; minSelect: number; maxSelect: number }
+  | { kind: 'updateGroup'; id: string; name?: string; minSelect?: number; maxSelect?: number }
+  | { kind: 'deleteGroup'; id: string }
+  | {
+      kind: 'addOption'
+      groupId: string
+      name: string
+      priceSen: number
+      type: 'ADD_ON' | 'REMOVAL'
+    }
+  | {
+      kind: 'updateOption'
+      id: string
+      name?: string
+      priceSen?: number
+      type?: 'ADD_ON' | 'REMOVAL'
+      isSoldOut?: boolean
+    }
+  | { kind: 'deleteOption'; id: string }
+
 const noop = () => {}
+
+/** The demo catalogue is fixed; building a menu needs the real server. */
+const editMenuUnavailable = async (edit: MenuEdit): Promise<boolean> => {
+  void edit
+  return false
+}
 
 /**
  * The demo books: generated history, in memory, reset on reload. Used only in
@@ -358,6 +413,9 @@ export function useDemoStore(_enabled = true) {
       settleAdvance,
       toggleSoldOut,
       updatePrice,
+      /** Resolves true once the change is saved; false if it was refused. */
+      editMenu: editMenuUnavailable,
+      canEditMenu: false,
       error: null as string | null,
       dismissError: noop,
       isLoading: false,
