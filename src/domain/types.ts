@@ -79,6 +79,22 @@ export type Order = {
   lines: OrderLine[]
 }
 
+export type CorrectionKind = 'CANCEL' | 'EXCHANGE'
+
+export type SaleCorrection = {
+  id: string
+  originalOrderId: string
+  originalQueueNumber: string
+  shiftId: string
+  businessDate: string
+  createdAt: string
+  kind: CorrectionKind
+  reason: string
+  /** Signed: negative was returned to the customer; positive was collected. */
+  deltaSen: number
+  brandDeltas: Array<{ brandId: string; deltaSen: number }>
+}
+
 // ---------------------------------------------------------------------------
 // Money movement
 // ---------------------------------------------------------------------------
@@ -108,6 +124,8 @@ export type LedgerEntry = {
   brandId: string | null
   orderId: string | null
   shiftId: string | null
+  /** Present when this row came from a cashier cancel or exchange. */
+  correctionId?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +180,13 @@ export type TerminalStatus = {
   consecutiveSyncFailures: number
   /** Sales the tablet is still holding locally. */
   unsentSaleCount: number
+}
+
+/** A counter tablet signed in right now. The owner can sign it out from Settings. */
+export type CounterSession = {
+  id: string
+  signedInAt: string
+  lastUsedAt: string
 }
 
 // ---------------------------------------------------------------------------

@@ -5,15 +5,27 @@ throughout, light mode only — the same choices as the POS.
 
 Part of the Vista system: [vista-pos](https://github.com/hariz2001-del/vista-pos) (cashier) · **vista-rms** (owner dashboard) · [vista-api](https://github.com/hariz2001-del/vista-api) (backend).
 
-**Status: UI round.** Runs entirely on generated demo data (`src/data/fake/`) with an in-memory
-store standing in for the API. `api-vista` has the money path but not expenses, ledger reporting
-or settlement yet, so wiring this to it is the next step, not this one.
+**Status: connected to `api-vista`.** Sign in with the business account — the same one the
+counter uses (`demo@vistahub.my` / `vista` in the demo seed) — and the dashboard reads the real
+books from `GET /rms/snapshot`, re-reading every five seconds, so a sale rung at the counter shows
+up within that. Every action (log an expense, settle an advance, Adjust Balance, force-close, menu
+price and sold-out, settings, partner names, closing a period) is a request to the API, followed
+by a fresh read. A period's settlement is computed and frozen by the server; the figures on screen
+are a preview.
+
+Signing in here gives an **owner session** (expires after 12 hours). The counter tablet signs in
+with the same account but gets a counter session, which is refused here. **Settings → Counter
+tablet** signs the counter out: it returns to its sign-in screen on its next request, keeping any
+unsent sales on the device.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5174
+npm run dev      # http://localhost:5174 — reads api-vista on http://127.0.0.1:3000, start that first
 npm run check    # oxlint + vitest + tsc + vite build
 ```
+
+Point at a different API with `VITE_API_BASE_URL` (see `.env.example`). Set `VITE_DEMO=1` to run
+on the generated demo history with no server at all.
 
 ## The six sections
 
@@ -64,12 +76,14 @@ the ratio in Settings applies from now on and can never quietly rewrite a closed
 slider only appears for a *shared* cost — applying 70/30 to a direct Food restock would bleed 30%
 of it onto Drinks and corrupt both brands' results.
 
-**A partner who pays out of pocket is not owed the whole amount.** Their own brand's share was
-always theirs to bear; only the counterparty's share is a debt. Settlement shows the RM 2,400
-chiller as RM 1,200 owed, not RM 2,400.
+**A partner who pays out of pocket is reimbursed in full.** Both brands already bear their share
+through the expense split in the operating result. Reimbursing only the counterparty's portion
+would make the paying partner bear their own portion twice.
 
-**Paid sales are immutable.** Resolving a flag never edits one — a refund writes its own reversing
-entry.
+**Paid sales are immutable.** A counter cancel or exchange never edits one — it writes its own
+linked reversing entry. Cashier corrections appear on the Owner's desk for oversight, link to
+their ungrouped Cashflow rows, and flow through net sales, brand split, daily chart, and live
+counter takings rather than being hidden inside the original order.
 
 ## Charts
 
@@ -88,15 +102,20 @@ neither Vista app ships one.
 
 ## Demo data
 
-`src/data/fake/generate.ts` produces five weeks of trading from a fixed seed: weekday/weekend
+Used only with `VITE_DEMO=1`. `src/data/fake/generate.ts` produces five weeks of trading from a
+fixed seed: weekday/weekend
 variation, Mondays closed, rent and utilities on their usual dates, restocks, three partner
-drawings, a chiller the Drinks partner paid for and has never been reimbursed for, two flagged
-sales, one sale priced offline against a stale menu, and one shift whose bank total was RM 18.50
-short. Thin data makes a bad dashboard look fine, which is why it is not thin.
+drawings, a chiller the Drinks partner paid for and has never been reimbursed for, two historical
+flagged sales, two cashier corrections, one sale priced offline against a stale menu, and one shift
+whose bank total was RM 18.50 short. Thin data makes a bad dashboard look fine, which is why it is
+not thin.
 
 ## Tests
 
-`src/domain/finance.test.ts` — 14 tests over the settlement maths: shared splits summing exactly,
+33 tests cover the settlement maths and correction reporting — including that a sale the cashier
+refunded is not paid out to the partners, with the same figures the server's period close is
+tested against: shared splits summing exactly,
 the host cut clamped at zero on a loss, a deficit carried forward and then recovered across
 periods, capital assets excluded from the operating result, the stored split winning over the
-current setting, and the running balance ordering by business date.
+current setting, running balance ordering by business date, same-price cross-brand exchanges,
+owner activity cards, and corrected live takings.

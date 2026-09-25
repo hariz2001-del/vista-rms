@@ -1,6 +1,7 @@
 import { AlertTriangle, Circle, CircleDot, MoreVertical, WifiOff } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { VistaStore } from '../data/store.ts'
+import { IS_DEMO } from '../lib/mode.ts'
 import { formatRinggit } from '../domain/money.ts'
 import { bannerState, type BannerState } from '../domain/selectors.ts'
 
@@ -52,10 +53,8 @@ function Content({ state }: { state: BannerState }) {
           <WifiOff aria-hidden="true" className="size-4 shrink-0" />
           <span className="font-black">Counter tablet offline</span>
           <span className="opacity-90">
-            No contact for {state.minutesSince}m
-            {state.unsentSaleCount > 0
-              ? ` · ${state.unsentSaleCount} sale${state.unsentSaleCount === 1 ? '' : 's'} still on the device`
-              : ''}
+            No contact for {state.minutesSince}m — sales made since then have not reached the
+            server
           </span>
         </>
       )
@@ -104,7 +103,7 @@ export function StatusBanner({ store }: { store: VistaStore }) {
     return () => window.removeEventListener('mousedown', close)
   }, [menuOpen])
 
-  const state = bannerState(store.shifts, store.orders, store.terminal, now)
+  const state = bannerState(store.shifts, store.orders, store.corrections, store.terminal, now)
 
   return (
     <div
@@ -148,28 +147,74 @@ export function StatusBanner({ store }: { store: VistaStore }) {
         </div>
       ) : null}
 
-      {/* Dev-only: step through each state without waiting for real conditions. */}
-      {import.meta.env.DEV ? (
-        <div className="ml-auto flex items-center gap-1 text-xs">
-          <span className="opacity-70">preview:</span>
-          {(
-            [
-              ['ok', { lastSeenAt: new Date().toISOString(), consecutiveSyncFailures: 0, unsentSaleCount: 0 }],
-              ['offline', { lastSeenAt: new Date(Date.now() - 12 * 60_000).toISOString(), consecutiveSyncFailures: 0, unsentSaleCount: 6 }],
-              ['failing', { consecutiveSyncFailures: 3 }],
-            ] as const
-          ).map(([label, patch]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => store.simulateTerminal(patch)}
-              className="rounded-sm bg-black/15 px-1.5 py-0.5 font-bold hover:bg-black/25"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+    </div>
+  )
+}
+
+/**
+ * Dev-only. Deliberately a separate strip below the banner rather than inside
+ * it: controls in the bar stole the right edge from the ⋮ menu and made a demo
+ * affordance look like part of the product.
+ */
+export function BannerPreviewControls({ store }: { store: VistaStore }) {
+  // Demo mode only. On the real books the banner reads the counter's heartbeat,
+  // and a preview button that faked it would be lying.
+  if (!import.meta.env.DEV || !IS_DEMO) return null
+
+  const openShift = store.shifts.find((shift) => shift.closedAt === null)
+
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-canvas px-4 py-1 text-xs text-muted sm:px-6">
+      <span className="font-mono uppercase tracking-wider">dev · banner preview</span>
+      <button
+        type="button"
+        onClick={() =>
+          store.simulateTerminal({
+            lastSeenAt: new Date().toISOString(),
+            consecutiveSyncFailures: 0,
+          })
+        }
+        className="border border-line bg-surface px-2 py-0.5 font-bold hover:bg-canvas"
+      >
+        trading
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          store.simulateTerminal({
+            lastSeenAt: new Date(Date.now() - 12 * 60_000).toISOString(),
+            consecutiveSyncFailures: 0,
+          })
+        }
+        className="border border-line bg-surface px-2 py-0.5 font-bold hover:bg-canvas"
+      >
+        offline
+      </button>
+      <button
+        type="button"
+        onClick={() => store.simulateTerminal({ consecutiveSyncFailures: 3 })}
+        className="border border-line bg-surface px-2 py-0.5 font-bold hover:bg-canvas"
+      >
+        failing
+      </button>
+      <button
+        type="button"
+        disabled={!openShift}
+        onClick={() => openShift && store.forceCloseShift(openShift.id)}
+        title={openShift ? 'Closes the demo shift so the resting state can be seen' : 'Already closed'}
+        className="border border-line bg-surface px-2 py-0.5 font-bold hover:bg-canvas disabled:opacity-40"
+      >
+        closed
+      </button>
+      <button
+        type="button"
+        disabled={Boolean(openShift)}
+        onClick={() => store.reopenDemoShift()}
+        title="Opens a demo shift again — every other state needs one"
+        className="border border-line bg-surface px-2 py-0.5 font-bold hover:bg-canvas disabled:opacity-40"
+      >
+        reopen
+      </button>
     </div>
   )
 }

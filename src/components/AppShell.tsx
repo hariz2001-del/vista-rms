@@ -47,6 +47,10 @@ type Props = {
   attentionCount: number
   /** Rendered above the content, pinned across every screen. */
   banner?: ReactNode
+  /** True when the figures are the generated demo history, not the real books. */
+  isDemo?: boolean
+  /** Shown only when signed in to the real books. */
+  onSignOut?: () => void
   children: ReactNode
 }
 
@@ -57,6 +61,8 @@ export function AppShell({
   outletName,
   attentionCount,
   banner,
+  isDemo = false,
+  onSignOut,
   children,
 }: Props) {
   return (
@@ -107,7 +113,18 @@ export function AppShell({
 
         <div className="border-t border-white/15 px-5 py-5 text-[0.66rem] leading-relaxed text-rail-muted">
           <p className="font-mono uppercase tracking-[0.12em] text-white/70">Working note</p>
-          <p className="mt-2">Demo data. Figures are an operating result, not accounting profit.</p>
+          <p className="mt-2">
+            {isDemo ? 'Demo data. ' : ''}Figures are an operating result, not accounting profit.
+          </p>
+          {onSignOut ? (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="mt-4 min-h-9 text-xs font-bold text-white/80 underline hover:text-white"
+            >
+              Sign out
+            </button>
+          ) : null}
         </div>
       </aside>
 
@@ -121,6 +138,15 @@ export function AppShell({
           <div className="min-w-0 text-right">
             <p className="truncate text-[0.58rem] font-bold uppercase tracking-[0.14em] text-rail-muted">{businessName}</p>
             <p className="truncate text-xs font-bold">{outletName}</p>
+            {onSignOut ? (
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="text-[0.62rem] font-bold text-white/70 underline"
+              >
+                Sign out
+              </button>
+            ) : null}
           </div>
         </header>
 
