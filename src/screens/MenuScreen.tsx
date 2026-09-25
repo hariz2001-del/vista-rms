@@ -2,6 +2,7 @@ import { Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Badge, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { MenuEdit, VistaStore } from '../data/store.ts'
+import { isCommon, suggestGroups, type GroupSuggestion } from '../domain/menu-suggestions.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import type { Brand, Category, ModifierGroup, Product } from '../domain/types.ts'
 
@@ -139,6 +140,91 @@ function InlineName({
   )
 }
 
+/**
+ * Pick a category. With more than one brand the list is grouped by brand,
+ * because moving an item to another brand's category moves its future sales
+ * to that brand too.
+ */
+function CategorySelect({
+  value,
+  categories,
+  brands,
+  label,
+  onChange,
+}: {
+  value: string
+  categories: Category[]
+  brands: Brand[]
+  label: string
+  onChange: (categoryId: string) => void
+}) {
+  const options = (list: Category[]) =>
+    list.map((category) => (
+      <option key={category.id} value={category.id}>
+        {category.name}
+      </option>
+    ))
+  return (
+    <select
+      value={value}
+      aria-label={label}
+      onChange={(event) => onChange(event.target.value)}
+      className="vista-control max-w-44 px-2 text-sm"
+    >
+      {brands.length > 1
+        ? brands.map((brand) => (
+            <optgroup key={brand.id} label={brand.name}>
+              {options(categories.filter((category) => category.brandId === brand.id))}
+            </optgroup>
+          ))
+        : options(categories)}
+    </select>
+  )
+}
+
+/** "Regular · Large +RM 1.50 · …" — enough to recognise a group at a glance. */
+function optionsPreview(group: ModifierGroup): string {
+  const shown = group.options
+    .slice(0, 3)
+    .map((option) => (option.priceSen > 0 ? `${option.name} +${formatRinggit(option.priceSen)}` : option.name))
+  return group.options.length > 3 ? `${shown.join(' · ')} · +${group.options.length - 3} more` : shown.join(' · ')
+}
+
+/**
+ * Option groups the category's other items use, to copy onto this one. In the
+ * new-item form they are tick boxes; in the editor, one tap adds each.
+ */
+function Suggestions({
+  categoryName,
+  suggestions,
+  children,
+}: {
+  categoryName: string
+  suggestions: GroupSuggestion[]
+  children: (suggestion: GroupSuggestion) => ReactNode
+}) {
+  if (suggestions.length === 0) return null
+  return (
+    <div className="border border-dashed border-line bg-surface p-3">
+      <p className="vista-field-label">Suggested from {categoryName}</p>
+      <ul className="mt-2 space-y-2">
+        {suggestions.map((suggestion) => (
+          <li key={suggestion.group.id} className="flex flex-wrap items-center gap-2">
+            {children(suggestion)}
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-black">{suggestion.group.name}</span>
+              <span className="block truncate text-xs text-muted">{optionsPreview(suggestion.group)}</span>
+            </span>
+            <span className="font-mono text-[0.65rem] font-bold text-muted">
+              on {suggestion.usedBy} of {suggestion.of} items
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Brands
 // ---------------------------------------------------------------------------
@@ -210,10 +296,12 @@ function BrandsPanel({ store, edit }: { store: VistaStore; edit: Edit }) {
 
 function NewProductForm({
   category,
+  products,
   edit,
   onDone,
 }: {
   category: Category
+  products: Product[]
   edit: Edit
   onDone: () => void
 }) {
@@ -222,6 +310,12 @@ function NewProductForm({
   const [description, setDescription] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [busy, setBusy] = useState(false)
+  // Read once when the form opens: the category's options, with the ones most
+  // of its items share already ticked.
+  const [suggestions] = useState(() => suggestGroups(products, category.id))
+  const [copying, setCopying] = useState<Set<string>>(
+    () => new Set(suggestions.filter(isCommon).map((suggestion) => suggestion.group.id)),
+  )
   const priceSen = parseRinggitToSen(price)
   const canSave = name.trim().length > 0 && priceSen !== null && priceSen >= 0
 
@@ -236,9 +330,19 @@ function NewProductForm({
       description: description.trim(),
       basePriceSen: priceSen,
       imageUrl: imageUrl.trim() || null,
+      copyGroupIds: [...copying],
     })
     setBusy(false)
     if (saved) onDone()
+  }
+
+  function toggle(groupId: string) {
+    setCopying((current) => {
+      const next = new Set(current)
+      if (next.has(groupId)) next.delete(groupId)
+      else next.add(groupId)
+      return next
+    })
   }
 
   return (
@@ -285,9 +389,22 @@ function NewProductForm({
           className="vista-control mt-1 w-full px-3"
         />
       </label>
+      <Suggestions categoryName={category.name} suggestions={suggestions}>
+        {(suggestion) => (
+          <input
+            type="checkbox"
+            checked={copying.has(suggestion.group.id)}
+            onChange={() => toggle(suggestion.group.id)}
+            aria-label={`Give this item ${suggestion.group.name}`}
+            className="size-5 shrink-0 accent-[var(--color-rail)]"
+          />
+        )}
+      </Suggestions>
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={!canSave || busy} className="vista-button-primary min-h-11 px-4 disabled:opacity-50">
-          Add item
+          {copying.size > 0
+            ? `Add item with ${copying.size} option group${copying.size === 1 ? '' : 's'}`
+            : 'Add item'}
         </button>
         <button type="button" onClick={onDone} className="vista-button-secondary min-h-11 px-4">
           Cancel
@@ -416,17 +533,33 @@ function GroupEditor({ group, edit }: { group: ModifierGroup; edit: Edit }) {
 
 function ProductEditor({
   product,
+  products,
   categories,
+  brands,
   edit,
   onClose,
 }: {
   product: Product
+  products: Product[]
   categories: Category[]
+  brands: Brand[]
   edit: Edit
   onClose: () => void
 }) {
   const [description, setDescription] = useState(product.description ?? '')
   const [imageUrl, setImageUrl] = useState(product.imageUrl)
+  const [adding, setAdding] = useState<string | null>(null)
+  const suggestions = useMemo(
+    () => suggestGroups(products, product.categoryId, product.id, product.modifierGroups ?? []),
+    [products, product.categoryId, product.id, product.modifierGroups],
+  )
+  const categoryName = categories.find((category) => category.id === product.categoryId)?.name ?? 'this category'
+
+  async function addSuggested(groupId: string) {
+    setAdding(groupId)
+    await edit({ kind: 'copyGroup', productId: product.id, groupId })
+    setAdding(null)
+  }
 
   return (
     <div className="mt-2 w-full space-y-3 border border-line bg-canvas p-3">
@@ -437,20 +570,15 @@ function ProductEditor({
           label="Item name"
           onSave={(name) => void edit({ kind: 'updateProduct', id: product.id, changes: { name } })}
         />
-        <select
+        <CategorySelect
           value={product.categoryId}
-          aria-label="Category"
-          onChange={(event) =>
-            void edit({ kind: 'updateProduct', id: product.id, changes: { categoryId: event.target.value } })
+          categories={categories}
+          brands={brands}
+          label="Category"
+          onChange={(categoryId) =>
+            void edit({ kind: 'updateProduct', id: product.id, changes: { categoryId } })
           }
-          className="vista-control px-2 text-sm"
-        >
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       <label className="block">
@@ -490,6 +618,19 @@ function ProductEditor({
           {(product.modifierGroups ?? []).map((group) => (
             <GroupEditor key={group.id} group={group} edit={edit} />
           ))}
+          <Suggestions categoryName={categoryName} suggestions={suggestions}>
+            {(suggestion) => (
+              <button
+                type="button"
+                disabled={adding !== null}
+                onClick={() => void addSuggested(suggestion.group.id)}
+                aria-label={`Add ${suggestion.group.name} to this item`}
+                className="vista-button-secondary flex min-h-10 items-center gap-1 px-3 disabled:opacity-50"
+              >
+                <Plus aria-hidden="true" className="size-4" /> Add
+              </button>
+            )}
+          </Suggestions>
           <AddByName
             label="Add option group"
             placeholder="Group, e.g. Size or Extras"
@@ -705,6 +846,18 @@ export function MenuScreen({ store }: { store: VistaStore }) {
                   {product.isSoldOut ? 'Back in stock' : 'Mark sold out'}
                 </button>
 
+                {canEdit && store.categories.length > 1 ? (
+                  <CategorySelect
+                    value={product.categoryId}
+                    categories={store.categories}
+                    brands={store.brands}
+                    label={`Move ${product.name} to another category`}
+                    onChange={(categoryId) =>
+                      void edit({ kind: 'updateProduct', id: product.id, changes: { categoryId } })
+                    }
+                  />
+                ) : null}
+
                 {canEdit ? (
                   <IconButton
                     label={`Edit ${product.name}`}
@@ -717,7 +870,9 @@ export function MenuScreen({ store }: { store: VistaStore }) {
                 {canEdit && openProduct === product.id ? (
                   <ProductEditor
                     product={product}
+                    products={store.products}
                     categories={store.categories}
+                    brands={store.brands}
                     edit={edit}
                     onClose={() => setOpenProduct(null)}
                   />
@@ -728,7 +883,12 @@ export function MenuScreen({ store }: { store: VistaStore }) {
 
           {canEdit ? (
             addingTo === category.id ? (
-              <NewProductForm category={category} edit={edit} onDone={() => setAddingTo(null)} />
+              <NewProductForm
+                category={category}
+                products={store.products}
+                edit={edit}
+                onDone={() => setAddingTo(null)}
+              />
             ) : (
               <button
                 type="button"
