@@ -222,6 +222,37 @@ export type Partner = {
   role: 'FOOD_OWNER' | 'STALL_HOST'
 }
 
+/**
+ * A discount preset for a promo. The cashier picks it from the discount screen
+ * for one item or the whole order, on business dates inside its range.
+ */
+export type PromotionTarget = {
+  /** Exactly one of an item or a category. */
+  productId: string | null
+  categoryId: string | null
+  /** For a combo: how many of it the combo needs. */
+  quantity: number
+}
+
+export type Promotion = {
+  id: string
+  name: string
+  /** PERCENT: `value` is 1–100. AMOUNT: `value` is sen off. */
+  kind: 'PERCENT' | 'AMOUNT'
+  value: number
+  /** Off the whole order; off certain items; or off a combo bought together. */
+  scope: 'ORDER' | 'ITEMS' | 'COMBO'
+  /** Whole-order promos: applied to every order without the cashier picking it. Item and combo promos always are. */
+  autoApply: boolean
+  /** Every matching item or complete combo, or once per receipt. */
+  limit: 'EACH' | 'ONCE_PER_ORDER'
+  targets: PromotionTarget[]
+  startsOn: string
+  /** Null runs until switched off. */
+  endsOn: string | null
+  isActive: boolean
+}
+
 export type PeriodClosure = {
   id: string
   startDate: string
@@ -244,6 +275,12 @@ export type AccountSettings = {
    * them. Off for a new business, which then never sees partners or splits.
    */
   settlementEnabled: boolean
+  /**
+   * When one trading day ends and the next begins: an hour of the morning,
+   * 0–12, Malaysia time. With 5, a 1am sale counts for the night before.
+   * Absent in older data, which means 5.
+   */
+  dayRolloverHour?: number
   /** Share of shared overheads borne by Food. Drinks takes the remainder. */
   sharedOverheadFoodPct: number
   /** Host's cut of the Food net result. */

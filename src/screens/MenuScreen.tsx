@@ -29,6 +29,7 @@ import {
 } from '../domain/menu-suggestions.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import type { Brand, Category, ModifierGroup, Product } from '../domain/types.ts'
+import { PromotionsPanel } from './PromotionsPanel.tsx'
 
 /**
  * The menu: live prices and availability, and — for the real books — the
@@ -367,6 +368,144 @@ function BrandsPanel({ store, edit }: { store: VistaStore; edit: Edit }) {
 // Items
 // ---------------------------------------------------------------------------
 
+type DraftOption = { key: string; name: string; price: string }
+type DraftGroup = { key: string; name: string; minSelect: number; maxSelect: number; options: DraftOption[] }
+
+const newKey = () => crypto.randomUUID()
+
+/** A draft group is ready to save when it has a name and every option it lists has a name and a readable price. */
+export function draftToGroup(draft: DraftGroup) {
+  const options = draft.options
+    .filter((option) => option.name.trim() !== '')
+    .map((option) => ({
+      name: option.name.trim(),
+      priceSen: option.price.trim() === '' ? 0 : parseRinggitToSen(option.price),
+    }))
+  if (!draft.name.trim() || options.some((option) => option.priceSen === null)) return null
+  return {
+    name: draft.name.trim(),
+    minSelect: draft.minSelect,
+    maxSelect: draft.maxSelect,
+    options: options as Array<{ name: string; priceSen: number }>,
+  }
+}
+
+/**
+ * Option groups made up for a new item on the spot — name, rule and options —
+ * so a business with nothing to copy from can still build its own.
+ */
+function DraftGroupsEditor({
+  drafts,
+  onChange,
+}: {
+  drafts: DraftGroup[]
+  onChange: (drafts: DraftGroup[]) => void
+}) {
+  const update = (key: string, change: (draft: DraftGroup) => DraftGroup) =>
+    onChange(drafts.map((draft) => (draft.key === key ? change(draft) : draft)))
+
+  return (
+    <div className="space-y-2">
+      {drafts.map((draft) => (
+        <div key={draft.key} className="space-y-2 border border-line bg-surface p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={draft.name}
+              placeholder="Group name, e.g. Size"
+              aria-label="New option group name"
+              maxLength={80}
+              onChange={(event) => update(draft.key, (current) => ({ ...current, name: event.target.value }))}
+              className="vista-control min-w-0 flex-1 px-3 text-sm font-black"
+            />
+            <RuleEditor
+              minSelect={draft.minSelect}
+              maxSelect={draft.maxSelect}
+              onChange={(minSelect, maxSelect) => update(draft.key, (current) => ({ ...current, minSelect, maxSelect }))}
+            />
+            <IconButton
+              label="Remove this group"
+              tone="danger"
+              onClick={() => onChange(drafts.filter((candidate) => candidate.key !== draft.key))}
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+            </IconButton>
+          </div>
+          {draft.options.map((option) => (
+            <div key={option.key} className="flex flex-wrap items-center gap-2 pl-2">
+              <input
+                value={option.name}
+                placeholder="Option, e.g. Large"
+                aria-label="New option name"
+                maxLength={80}
+                onChange={(event) =>
+                  update(draft.key, (current) => ({
+                    ...current,
+                    options: current.options.map((candidate) =>
+                      candidate.key === option.key ? { ...candidate, name: event.target.value } : candidate,
+                    ),
+                  }))
+                }
+                className="vista-control min-w-0 flex-1 px-3 text-sm"
+              />
+              <input
+                value={option.price}
+                placeholder="+RM 0.00"
+                inputMode="decimal"
+                aria-label="New option extra charge"
+                onChange={(event) =>
+                  update(draft.key, (current) => ({
+                    ...current,
+                    options: current.options.map((candidate) =>
+                      candidate.key === option.key ? { ...candidate, price: event.target.value } : candidate,
+                    ),
+                  }))
+                }
+                className="vista-control w-28 px-3 text-sm tabular"
+              />
+              <IconButton
+                label="Remove this option"
+                tone="danger"
+                onClick={() =>
+                  update(draft.key, (current) => ({
+                    ...current,
+                    options: current.options.filter((candidate) => candidate.key !== option.key),
+                  }))
+                }
+              >
+                <X aria-hidden="true" className="size-4" />
+              </IconButton>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              update(draft.key, (current) => ({
+                ...current,
+                options: [...current.options, { key: newKey(), name: '', price: '' }],
+              }))
+            }
+            className="ml-2 flex min-h-9 items-center gap-1 text-xs font-bold text-ink underline"
+          >
+            <Plus aria-hidden="true" className="size-3.5" /> Add option
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() =>
+          onChange([
+            ...drafts,
+            { key: newKey(), name: '', minSelect: 0, maxSelect: 1, options: [{ key: newKey(), name: '', price: '' }] },
+          ])
+        }
+        className="vista-button-secondary flex min-h-11 items-center gap-1 px-3"
+      >
+        <Plus aria-hidden="true" className="size-4" /> Make your own option group
+      </button>
+    </div>
+  )
+}
+
 function NewProductForm({
   category,
   products,
@@ -392,8 +531,12 @@ function NewProductForm({
   const [copying, setCopying] = useState<Set<string>>(
     () => new Set(suggestions.filter(isCommon).map((suggestion) => suggestion.group.id)),
   )
+  const [drafts, setDrafts] = useState<DraftGroup[]>([])
+  const newGroups = drafts.map(draftToGroup)
+  const draftsReady = newGroups.every((group) => group !== null)
+  const groupCount = copying.size + drafts.length
   const priceSen = parseRinggitToSen(price)
-  const canSave = name.trim().length > 0 && priceSen !== null && priceSen >= 0
+  const canSave = name.trim().length > 0 && priceSen !== null && priceSen >= 0 && draftsReady
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -407,6 +550,7 @@ function NewProductForm({
       basePriceSen: priceSen,
       imageUrl: imageUrl.trim() || null,
       copyGroupIds: [...copying],
+      newGroups: newGroups.filter((group) => group !== null),
     })
     setBusy(false)
     if (saved) onDone()
@@ -481,10 +625,16 @@ function NewProductForm({
           />
         )}
       </Suggestions>
+      <DraftGroupsEditor drafts={drafts} onChange={setDrafts} />
+      {!draftsReady ? (
+        <p className="text-xs font-bold text-critical" role="alert">
+          Give each new option group a name, and each extra charge a price like 1.50.
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={!canSave || busy} className="vista-button-primary min-h-11 px-4 disabled:opacity-50">
-          {copying.size > 0
-            ? `Add item with ${copying.size} option group${copying.size === 1 ? '' : 's'}`
+          {groupCount > 0
+            ? `Add item with ${groupCount} option group${groupCount === 1 ? '' : 's'}`
             : 'Add item'}
         </button>
         <button type="button" onClick={onDone} className="vista-button-secondary min-h-11 px-4">
@@ -492,6 +642,93 @@ function NewProductForm({
         </button>
       </div>
     </form>
+  )
+}
+
+const RULE_PRESETS: Array<{ value: string; label: string }> = [
+  { value: '1-1', label: 'exactly one (required)' },
+  { value: '0-1', label: 'up to one' },
+  { value: '0-2', label: 'up to two' },
+  { value: '0-3', label: 'up to three' },
+  { value: '0-5', label: 'up to five' },
+]
+
+/**
+ * How many options the cashier may pick from a group: a common rule from the
+ * list, or "Custom" — any minimum and maximum, e.g. "2 to 3" for a combo.
+ */
+function RuleEditor({
+  minSelect,
+  maxSelect,
+  onChange,
+}: {
+  minSelect: number
+  maxSelect: number
+  onChange: (minSelect: number, maxSelect: number) => void
+}) {
+  const current = `${minSelect}-${maxSelect}`
+  const [custom, setCustom] = useState(!RULE_PRESETS.some((preset) => preset.value === current))
+  const [min, setMin] = useState(String(minSelect))
+  const [max, setMax] = useState(String(maxSelect))
+
+  function commit(nextMin: string, nextMax: string) {
+    const low = Number(nextMin)
+    const high = Number(nextMax)
+    if (Number.isInteger(low) && Number.isInteger(high) && low >= 0 && high >= 1 && high <= 20 && low <= high) {
+      if (low !== minSelect || high !== maxSelect) onChange(low, high)
+    } else {
+      setMin(String(minSelect))
+      setMax(String(maxSelect))
+    }
+  }
+
+  return (
+    <span className="flex flex-wrap items-center gap-1 text-xs font-bold text-muted">
+      Pick
+      <select
+        aria-label="How many can be picked"
+        value={custom ? 'custom' : current}
+        onChange={(event) => {
+          if (event.target.value === 'custom') {
+            setCustom(true)
+            return
+          }
+          setCustom(false)
+          const [low, high] = event.target.value.split('-').map(Number)
+          onChange(low ?? 0, high ?? 1)
+        }}
+        className="vista-control px-2 text-sm"
+      >
+        {RULE_PRESETS.map((preset) => (
+          <option key={preset.value} value={preset.value}>
+            {preset.label}
+          </option>
+        ))}
+        <option value="custom">Custom…</option>
+      </select>
+      {custom ? (
+        <>
+          at least
+          <input
+            value={min}
+            inputMode="numeric"
+            aria-label="At least"
+            onChange={(event) => setMin(event.target.value)}
+            onBlur={() => commit(min, max)}
+            className="vista-control w-12 px-2 text-center text-sm"
+          />
+          at most
+          <input
+            value={max}
+            inputMode="numeric"
+            aria-label="At most"
+            onChange={(event) => setMax(event.target.value)}
+            onBlur={() => commit(min, max)}
+            className="vista-control w-12 px-2 text-center text-sm"
+          />
+        </>
+      ) : null}
+    </span>
   )
 }
 
@@ -599,28 +836,12 @@ function GroupEditor({ group, edit }: { group: ModifierGroup; edit: Edit }) {
           label="Option group name"
           onSave={(name) => void edit({ kind: 'updateGroup', id: group.id, name })}
         />
-        <label className="flex items-center gap-1 text-xs font-bold text-muted">
-          Pick
-          <select
-            value={`${group.minSelect}-${group.maxSelect}`}
-            onChange={(event) => {
-              const [min, max] = event.target.value.split('-').map(Number)
-              void edit({ kind: 'updateGroup', id: group.id, minSelect: min, maxSelect: max })
-            }}
-            className="vista-control px-2 text-sm"
-          >
-            <option value="1-1">exactly one (required)</option>
-            <option value="0-1">up to one</option>
-            <option value="0-2">up to two</option>
-            <option value="0-3">up to three</option>
-            <option value="0-5">up to five</option>
-            {['1-1', '0-1', '0-2', '0-3', '0-5'].includes(`${group.minSelect}-${group.maxSelect}`) ? null : (
-              <option value={`${group.minSelect}-${group.maxSelect}`}>
-                {group.minSelect} to {group.maxSelect}
-              </option>
-            )}
-          </select>
-        </label>
+        <RuleEditor
+          key={`${group.id}:${group.minSelect}-${group.maxSelect}`}
+          minSelect={group.minSelect}
+          maxSelect={group.maxSelect}
+          onChange={(minSelect, maxSelect) => void edit({ kind: 'updateGroup', id: group.id, minSelect, maxSelect })}
+        />
         <IconButton
           label={`Delete ${group.name}`}
           tone="danger"
@@ -1150,6 +1371,7 @@ export function MenuScreen({ store }: { store: VistaStore }) {
       ) : null}
 
       {canEdit ? <BrandsPanel store={store} edit={edit} /> : null}
+      {canEdit ? <PromotionsPanel store={store} /> : null}
 
       {store.brands.length > 1 ? (
         <div className="flex flex-wrap gap-2">
