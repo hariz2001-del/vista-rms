@@ -11,6 +11,7 @@ import type {
   Partner,
   PeriodClosure,
   Product,
+  Promotion,
   SaleCorrection,
   Shift,
   TerminalStatus,
@@ -52,6 +53,8 @@ type Snapshot = {
   closures: PeriodClosure[]
   terminal: TerminalStatus
   counterSessions: CounterSession[]
+  /** Absent from an older API. */
+  promotions?: Promotion[]
 }
 
 const EMPTY_SETTINGS: AccountSettings = {
@@ -95,6 +98,7 @@ function menuRequest(edit: MenuEdit): ['POST' | 'PUT' | 'PATCH' | 'DELETE', stri
           basePriceSen: edit.basePriceSen,
           imageUrl: edit.imageUrl,
           copyGroupIds: edit.copyGroupIds,
+          newGroups: edit.newGroups,
         },
       ]
     case 'updateProduct':
@@ -139,6 +143,14 @@ function menuRequest(edit: MenuEdit): ['POST' | 'PUT' | 'PATCH' | 'DELETE', stri
       return ['PUT', `/rms/products/${edit.productId}/groups/order`, { ids: edit.ids }]
     case 'orderOptions':
       return ['PUT', `/rms/groups/${edit.groupId}/options/order`, { ids: edit.ids }]
+    case 'savePromotion':
+      return edit.id
+        ? ['PUT', `/rms/promotions/${edit.id}`, edit.promotion]
+        : ['POST', '/rms/promotions', edit.promotion]
+    case 'deletePromotion':
+      return ['DELETE', `/rms/promotions/${edit.id}`]
+    case 'setPartnerBrand':
+      return ['PUT', `/rms/partners/${edit.partnerId}`, { brandId: edit.brandId }]
   }
 }
 
@@ -358,6 +370,7 @@ export function useApiStore(enabled: boolean): VistaStore {
       updatePrice,
       editMenu,
       canEditMenu: true,
+      promotions: snapshot?.promotions ?? [],
       error,
       dismissError,
       isLoading: enabled && snapshot === null,

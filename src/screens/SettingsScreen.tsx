@@ -2,6 +2,22 @@ import { useState } from 'react'
 import { Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 
+/** 0 → "midnight", 5 → "5:00 am", 12 → "12:00 noon". */
+function rolloverLabel(hour: number): string {
+  if (hour === 0) return 'midnight'
+  if (hour === 12) return '12:00 noon'
+  return `${hour}:00 am`
+}
+
+/** What the chosen hour means, in one sentence. */
+function rolloverExample(hour: number): string {
+  if (hour === 0) {
+    return 'Every sale counts for the calendar day it was made on.'
+  }
+  const example = hour > 1 ? '1:00 am' : '12:30 am'
+  return `Sales before ${rolloverLabel(hour)} count for the night before — a sale at ${example} on Saturday counts as Friday's trading, so a late shift stays one day in your books.`
+}
+
 function clock(iso: string): string {
   return new Intl.DateTimeFormat('en-MY', {
     day: 'numeric',
@@ -272,9 +288,32 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
               />
             </dd>
           </div>
-          <div className="flex justify-between py-2">
-            <dt className="font-semibold text-muted">Trading day rolls over</dt>
-            <dd className="font-black">5:00 am</dd>
+          <div className="py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <dt className="font-semibold text-muted">
+                <label htmlFor="rollover">Trading day ends at</label>
+              </dt>
+              <dd>
+                <select
+                  id="rollover"
+                  value={store.settings.dayRolloverHour ?? 5}
+                  onChange={(event) =>
+                    store.setSettings({ ...store.settings, dayRolloverHour: Number(event.target.value) })
+                  }
+                  className="vista-control px-2 text-sm font-black"
+                >
+                  {Array.from({ length: 13 }, (_, hour) => (
+                    <option key={hour} value={hour}>
+                      {rolloverLabel(hour)}
+                    </option>
+                  ))}
+                </select>
+              </dd>
+            </div>
+            <p className="mt-1 max-w-xl text-xs text-muted">
+              {rolloverExample(store.settings.dayRolloverHour ?? 5)} Changing it affects shifts
+              opened from now on.
+            </p>
           </div>
           <div className="flex justify-between py-2">
             <dt className="font-semibold text-muted">Payment</dt>
@@ -363,33 +402,60 @@ function SplitPanels({
       <Panel>
         <SectionHeading
           title="Partners"
-          hint="The names settlement pays. Not logins — the business has one account."
+          hint="The names settlement pays, and which brand each owns. Not logins — the business has one account."
         />
         <ul className="divide-y divide-slate-100">
-          {store.partners.map((partner) => (
-            <li key={partner.id} className="flex items-center gap-3 py-3">
-              <div className="flex-1">
-                <NameField
-                  key={`${partner.id}:${partner.name}`}
-                  name={partner.name}
-                  label="Partner name"
-                  onSave={(next) => store.renamePartner(partner.id, next)}
-                />
-                <p className="mt-1 text-xs font-semibold text-muted">
-                  {partner.role === 'FOOD_OWNER' ? 'Food brand owner' : 'Stall host'}
-                </p>
-              </div>
-              <span
-                className="px-2 py-1 text-xs font-bold text-white"
-                style={{
-                  backgroundColor: store.brands.find((b) => b.id === partner.brandId)?.colour,
-                }}
-              >
-                {store.brands.find((b) => b.id === partner.brandId)?.name}
-              </span>
-            </li>
-          ))}
+          {store.partners.map((partner) => {
+            const brand = store.brands.find((candidate) => candidate.id === partner.brandId)
+            return (
+              <li key={partner.id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <NameField
+                    key={`${partner.id}:${partner.name}`}
+                    name={partner.name}
+                    label="Partner name"
+                    onSave={(next) => store.renamePartner(partner.id, next)}
+                  />
+                  <p className="mt-1 text-xs font-semibold text-muted">
+                    {partner.role === 'FOOD_OWNER'
+                      ? `Owns ${brand?.name ?? 'this brand'}; pays the host a cut of it`
+                      : `Owns ${brand?.name ?? 'this brand'} and hosts the stall; takes the host commission`}
+                  </p>
+                </div>
+                {store.canEditMenu ? (
+                  <label className="flex items-center gap-2 text-xs font-bold text-muted">
+                    Owns
+                    <select
+                      value={partner.brandId}
+                      aria-label={`Brand ${partner.name} owns`}
+                      onChange={(event) =>
+                        void store.editMenu({ kind: 'setPartnerBrand', partnerId: partner.id, brandId: event.target.value })
+                      }
+                      className="vista-control px-2 text-sm font-black"
+                      style={{ borderLeft: `4px solid ${brand?.colour ?? 'transparent'}` }}
+                    >
+                      {store.brands.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <span className="px-2 py-1 text-xs font-bold text-white" style={{ backgroundColor: brand?.colour }}>
+                    {brand?.name}
+                  </span>
+                )}
+              </li>
+            )
+          })}
         </ul>
+        {store.canEditMenu && store.partners.length === 2 ? (
+          <p className="mt-2 text-xs text-muted">
+            Choosing the other brand for a partner swaps the two. The host is always whoever owns{' '}
+            {drinks.name}.
+          </p>
+        ) : null}
       </Panel>
     </>
   )

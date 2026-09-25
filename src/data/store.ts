@@ -11,6 +11,7 @@ import type {
   PaymentSource,
   PeriodClosure,
   Product,
+  Promotion,
   SaleCorrection,
   Shift,
   TerminalStatus,
@@ -73,6 +74,13 @@ export type MenuEdit =
       imageUrl: string | null
       /** Option groups of other items to copy onto the new one. */
       copyGroupIds: string[]
+      /** Option groups made up on the spot for the new item. */
+      newGroups: Array<{
+        name: string
+        minSelect: number
+        maxSelect: number
+        options: Array<{ name: string; priceSen: number }>
+      }>
     }
   | { kind: 'updateProduct'; id: string; changes: ProductChanges }
   /** Copy another item's option group, with its options, onto this one. */
@@ -103,6 +111,11 @@ export type MenuEdit =
   | { kind: 'orderProducts'; categoryId: string; ids: string[] }
   | { kind: 'orderGroups'; productId: string; ids: string[] }
   | { kind: 'orderOptions'; groupId: string; ids: string[] }
+  /** Promotions: `id` absent creates one. */
+  | { kind: 'savePromotion'; id?: string; promotion: Omit<Promotion, 'id'> }
+  | { kind: 'deletePromotion'; id: string }
+  /** Which brand a partner owns; the other partner takes the brand they had. */
+  | { kind: 'setPartnerBrand'; partnerId: string; brandId: string }
 
 const noop = () => {}
 
@@ -426,6 +439,7 @@ export function useDemoStore(_enabled = true) {
       /** Resolves true once the change is saved; false if it was refused. */
       editMenu: editMenuUnavailable,
       canEditMenu: false,
+      promotions: [] as Promotion[],
       error: null as string | null,
       dismissError: noop,
       isLoading: false,

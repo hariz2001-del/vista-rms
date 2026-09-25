@@ -222,6 +222,22 @@ export type Partner = {
   role: 'FOOD_OWNER' | 'STALL_HOST'
 }
 
+/**
+ * A discount preset for a promo. The cashier picks it from the discount screen
+ * for one item or the whole order, on business dates inside its range.
+ */
+export type Promotion = {
+  id: string
+  name: string
+  /** PERCENT: `value` is 1–100. AMOUNT: `value` is sen off. */
+  kind: 'PERCENT' | 'AMOUNT'
+  value: number
+  startsOn: string
+  /** Null runs until switched off. */
+  endsOn: string | null
+  isActive: boolean
+}
+
 export type PeriodClosure = {
   id: string
   startDate: string
@@ -244,6 +260,12 @@ export type AccountSettings = {
    * them. Off for a new business, which then never sees partners or splits.
    */
   settlementEnabled: boolean
+  /**
+   * When one trading day ends and the next begins: an hour of the morning,
+   * 0–12, Malaysia time. With 5, a 1am sale counts for the night before.
+   * Absent in older data, which means 5.
+   */
+  dayRolloverHour?: number
   /** Share of shared overheads borne by Food. Drinks takes the remainder. */
   sharedOverheadFoodPct: number
   /** Host's cut of the Food net result. */
