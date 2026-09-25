@@ -1,7 +1,26 @@
+import {
+  closestCenter,
+  DndContext,
+  pointerWithin,
+  useDroppable,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragOverEvent,
+} from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Badge, Panel, SectionHeading } from '../components/primitives.tsx'
+import { DragHandle, SortableList, useDragSensors, useSortableRow } from '../components/Sortable.tsx'
 import type { MenuEdit, VistaStore } from '../data/store.ts'
+import {
+  arrayMove,
+  categoryOf,
+  layoutOf,
+  moveItem,
+  reorderWithin,
+  type Layout,
+} from '../domain/menu-order.ts'
 import { isCommon, suggestGroups, type GroupSuggestion } from '../domain/menu-suggestions.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import type { Brand, Category, ModifierGroup, Product } from '../domain/types.ts'
@@ -414,7 +433,78 @@ function NewProductForm({
   )
 }
 
+/** A price that saves when the field is left. Blank or unreadable goes back to what it was. */
+function PriceField({
+  priceSen,
+  label,
+  onSave,
+}: {
+  priceSen: number
+  label: string
+  onSave: (priceSen: number) => void
+}) {
+  const shown = (priceSen / 100).toFixed(2)
+  const [draft, setDraft] = useState(shown)
+  return (
+    <span className="flex items-center border border-line bg-surface px-2">
+      <span className="text-xs font-black text-muted">+RM</span>
+      <input
+        value={draft}
+        inputMode="decimal"
+        aria-label={label}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          const next = draft.trim() === '' ? 0 : parseRinggitToSen(draft)
+          if (next !== null && next >= 0 && next !== priceSen) onSave(next)
+          else setDraft(shown)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+        }}
+        className="min-h-9 w-16 bg-transparent px-1 text-right text-sm font-bold tabular outline-none"
+      />
+    </span>
+  )
+}
+
+/** One option: dragged by its handle; name and price edited in place. */
+function OptionRow({ option, edit }: { option: ModifierGroup['options'][number]; edit: Edit }) {
+  const { setNodeRef, style, handle } = useSortableRow(option.id)
+  return (
+    <li ref={setNodeRef} style={style} className="flex flex-wrap items-center gap-2 bg-surface py-1.5">
+      <DragHandle label={`Move ${option.name}`} handle={handle} />
+      <InlineName
+        key={`${option.id}:${option.name}`}
+        name={option.name}
+        label="Option name"
+        onSave={(name) => void edit({ kind: 'updateOption', id: option.id, name })}
+      />
+      <PriceField
+        key={`${option.id}:${option.priceSen}`}
+        priceSen={option.priceSen}
+        label={`${option.name} extra charge`}
+        onSave={(priceSen) => void edit({ kind: 'updateOption', id: option.id, priceSen })}
+      />
+      <button
+        type="button"
+        onClick={() => void edit({ kind: 'updateOption', id: option.id, isSoldOut: !option.isSoldOut })}
+        className="min-h-9 border border-line px-2 text-xs font-bold text-slate-600"
+      >
+        {option.isSoldOut ? 'Back in stock' : 'Sold out'}
+      </button>
+      <IconButton
+        label={`Delete ${option.name}`}
+        tone="danger"
+        onClick={() => void edit({ kind: 'deleteOption', id: option.id })}
+      >
+        <X aria-hidden="true" className="size-4" />
+      </IconButton>
+    </li>
+  )
+}
+
 function GroupEditor({ group, edit }: { group: ModifierGroup; edit: Edit }) {
+  const { setNodeRef, style, handle } = useSortableRow(group.id)
   const [optionName, setOptionName] = useState('')
   const [optionPrice, setOptionPrice] = useState('')
   const optionPriceSen = optionPrice.trim() === '' ? 0 : parseRinggitToSen(optionPrice)
@@ -435,9 +525,12 @@ function GroupEditor({ group, edit }: { group: ModifierGroup; edit: Edit }) {
     }
   }
 
+  const optionById = new Map(group.options.map((option) => [option.id, option]))
+
   return (
-    <div className="border border-line bg-surface p-3">
+    <div ref={setNodeRef} style={style} className="border border-line bg-surface p-3">
       <div className="flex flex-wrap items-center gap-2">
+        <DragHandle label={`Move ${group.name}`} handle={handle} />
         <InlineName
           key={`${group.id}:${group.name}`}
           name={group.name}
@@ -477,30 +570,19 @@ function GroupEditor({ group, edit }: { group: ModifierGroup; edit: Edit }) {
         </IconButton>
       </div>
 
-      <ul className="mt-2 divide-y divide-slate-100 text-sm">
-        {group.options.map((option) => (
-          <li key={option.id} className="flex items-center gap-2 py-1.5">
-            <span className="flex-1 font-bold">{option.name}</span>
-            <span className="tabular text-muted">
-              {option.priceSen > 0 ? `+${formatRinggit(option.priceSen)}` : 'free'}
-            </span>
-            <button
-              type="button"
-              onClick={() => void edit({ kind: 'updateOption', id: option.id, isSoldOut: !option.isSoldOut })}
-              className="min-h-9 border border-line px-2 text-xs font-bold text-slate-600"
-            >
-              {option.isSoldOut ? 'Back in stock' : 'Sold out'}
-            </button>
-            <IconButton
-              label={`Delete ${option.name}`}
-              tone="danger"
-              onClick={() => void edit({ kind: 'deleteOption', id: option.id })}
-            >
-              <X aria-hidden="true" className="size-4" />
-            </IconButton>
-          </li>
-        ))}
-      </ul>
+      <SortableList
+        ids={group.options.map((option) => option.id)}
+        onReorder={(ids) => edit({ kind: 'orderOptions', groupId: group.id, ids })}
+      >
+        {(ids) => (
+          <ul className="mt-2 divide-y divide-slate-100 text-sm">
+            {ids.map((id) => {
+              const option = optionById.get(id)
+              return option ? <OptionRow key={id} option={option} edit={edit} /> : null
+            })}
+          </ul>
+        )}
+      </SortableList>
 
       <form onSubmit={(event) => void addOption(event)} className="mt-2 flex flex-wrap gap-2">
         <input
@@ -615,9 +697,19 @@ function ProductEditor({
       <div>
         <p className="vista-field-label">Options</p>
         <div className="mt-1 space-y-2">
-          {(product.modifierGroups ?? []).map((group) => (
-            <GroupEditor key={group.id} group={group} edit={edit} />
-          ))}
+          <SortableList
+            ids={(product.modifierGroups ?? []).map((group) => group.id)}
+            onReorder={(ids) => edit({ kind: 'orderGroups', productId: product.id, ids })}
+          >
+            {(ids) => (
+              <div className="space-y-2">
+                {ids.map((id) => {
+                  const group = product.modifierGroups?.find((candidate) => candidate.id === id)
+                  return group ? <GroupEditor key={id} group={group} edit={edit} /> : null
+                })}
+              </div>
+            )}
+          </SortableList>
           <Suggestions categoryName={categoryName} suggestions={suggestions}>
             {(suggestion) => (
               <button
@@ -672,35 +764,294 @@ function ProductEditor({
 // Screen
 // ---------------------------------------------------------------------------
 
+/**
+ * Drag ids carry what they are: `c:` a category, `p:` an item, `l:` a
+ * category's list of items (so an empty category can still take a drop).
+ */
+const CAT = 'c:'
+const ITEM = 'p:'
+const LIST = 'l:'
+const strip = (id: string) => id.slice(2)
+
+/**
+ * A category drag only looks at categories; an item drag only at items and
+ * lists, preferring the item under the pointer over the list around it. Both
+ * follow the pointer first: category panels are tall.
+ */
+const menuCollision: CollisionDetection = (args) => {
+  const dragging = String(args.active.id)
+  const containers = args.droppableContainers.filter((container) =>
+    dragging.startsWith(CAT) ? String(container.id).startsWith(CAT) : !String(container.id).startsWith(CAT),
+  )
+  const scoped = { ...args, droppableContainers: containers }
+  const hits = pointerWithin(scoped)
+  if (hits.length > 0) {
+    return hits.toSorted((a, b) => Number(String(b.id).startsWith(ITEM)) - Number(String(a.id).startsWith(ITEM)))
+  }
+  // The keyboard has no pointer.
+  return closestCenter(scoped)
+}
+
+type RowProps = {
+  product: Product
+  store: VistaStore
+  edit: Edit
+  brand?: Brand
+  canEdit: boolean
+  isOpen: boolean
+  onToggleOpen: () => void
+}
+
+function ItemRow({ product, store, edit, brand, canEdit, isOpen, onToggleOpen }: RowProps) {
+  const { setNodeRef, style, handle } = useSortableRow(ITEM + product.id)
+  const [editingPrice, setEditingPrice] = useState(false)
+  const [draftPrice, setDraftPrice] = useState('')
+
+  function commitPrice() {
+    const sen = parseRinggitToSen(draftPrice)
+    if (sen !== null && sen >= 0) store.updatePrice(product.id, sen)
+    setEditingPrice(false)
+  }
+
+  return (
+    <li ref={setNodeRef} style={style} className="flex flex-wrap items-center gap-3 bg-surface py-3">
+      {canEdit ? <DragHandle label={`Move ${product.name}`} handle={handle} /> : null}
+      <ProductThumb product={product} brand={brand} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-black text-ink">{product.name}</p>
+        <div className="flex flex-wrap gap-1">
+          {product.isSoldOut ? <Badge tone="critical">Sold out</Badge> : null}
+          {!product.isActive ? <Badge>Hidden</Badge> : null}
+          {(product.modifierGroups?.length ?? 0) > 0 ? (
+            <Badge tone="info">{product.modifierGroups?.length} option groups</Badge>
+          ) : null}
+        </div>
+      </div>
+
+      {editingPrice ? (
+        <div className="flex items-center gap-2">
+          <div className="flex items-center border-2 border-rail px-2">
+            <span className="text-xs font-black text-muted">RM</span>
+            <input
+              autoFocus
+              inputMode="decimal"
+              value={draftPrice}
+              onChange={(event) => setDraftPrice(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitPrice()
+                if (event.key === 'Escape') setEditingPrice(false)
+              }}
+              className="min-h-10 w-20 bg-transparent px-1 text-right font-black tabular outline-none"
+            />
+          </div>
+          <button type="button" onClick={commitPrice} className="vista-button-primary min-h-10">
+            Save
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setEditingPrice(true)
+            setDraftPrice((product.basePriceSen / 100).toFixed(2))
+          }}
+          className="min-h-10 border-b border-dotted border-muted px-2 text-base font-black tabular hover:bg-canvas"
+        >
+          {formatRinggit(product.basePriceSen)}
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={() => store.toggleSoldOut(product.id)}
+        className={`min-h-10 border px-3 text-xs font-bold ${
+          product.isSoldOut ? 'border-good bg-good text-white' : 'border-line bg-surface text-slate-600 hover:bg-canvas'
+        }`}
+      >
+        {product.isSoldOut ? 'Back in stock' : 'Mark sold out'}
+      </button>
+
+      {canEdit && store.categories.length > 1 ? (
+        <CategorySelect
+          value={product.categoryId}
+          categories={store.categories}
+          brands={store.brands}
+          label={`Move ${product.name} to another category`}
+          onChange={(categoryId) => void edit({ kind: 'updateProduct', id: product.id, changes: { categoryId } })}
+        />
+      ) : null}
+
+      {canEdit ? (
+        <IconButton label={`Edit ${product.name}`} onClick={onToggleOpen}>
+          <Pencil aria-hidden="true" className="size-4" />
+        </IconButton>
+      ) : null}
+
+      {canEdit && isOpen ? (
+        <ProductEditor
+          product={product}
+          products={store.products}
+          categories={store.categories}
+          brands={store.brands}
+          edit={edit}
+          onClose={onToggleOpen}
+        />
+      ) : null}
+    </li>
+  )
+}
+
+/** The list inside a category: also a drop target, so an empty category can take an item. */
+function ItemList({ categoryId, children }: { categoryId: string; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: LIST + categoryId })
+  return (
+    <ul
+      ref={setNodeRef}
+      className={`min-h-12 divide-y divide-slate-100 ${isOver ? 'bg-canvas outline-2 outline-dashed outline-line' : ''}`}
+    >
+      {children}
+    </ul>
+  )
+}
+
+function CategoryPanel({
+  category,
+  itemCount,
+  store,
+  edit,
+  brandName,
+  canEdit,
+  children,
+}: {
+  category: Category
+  itemCount: number
+  store: VistaStore
+  edit: Edit
+  brandName: string | null
+  canEdit: boolean
+  children: ReactNode
+}) {
+  const { setNodeRef, style, handle } = useSortableRow(CAT + category.id)
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Panel>
+        {canEdit ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {store.categories.length > 1 ? (
+              <DragHandle label={`Move the ${category.name} category`} handle={handle} />
+            ) : null}
+            <InlineName
+              key={`${category.id}:${category.name}`}
+              name={category.name}
+              label="Category name"
+              onSave={(name) => void edit({ kind: 'renameCategory', id: category.id, name })}
+            />
+            {brandName ? <Badge>{brandName}</Badge> : null}
+            {itemCount === 0 ? (
+              <IconButton
+                label={`Delete ${category.name}`}
+                tone="danger"
+                onClick={() => void edit({ kind: 'deleteCategory', id: category.id })}
+              >
+                <Trash2 aria-hidden="true" className="size-4" />
+              </IconButton>
+            ) : null}
+          </div>
+        ) : (
+          <SectionHeading title={category.name} />
+        )}
+        {children}
+      </Panel>
+    </div>
+  )
+}
+
 export function MenuScreen({ store }: { store: VistaStore }) {
   const [brandFilter, setBrandFilter] = useState<string | null>(null)
-  const [editingPrice, setEditingPrice] = useState<string | null>(null)
-  const [draftPrice, setDraftPrice] = useState('')
   const [openProduct, setOpenProduct] = useState<string | null>(null)
   const [addingTo, setAddingTo] = useState<string | null>(null)
   const canEdit = store.canEditMenu
   const edit = store.editMenu
+  const sensors = useDragSensors()
 
   const brandById = useMemo(() => new Map(store.brands.map((brand) => [brand.id, brand])), [store.brands])
+  const productById = useMemo(() => new Map(store.products.map((product) => [product.id, product])), [store.products])
 
-  const grouped = useMemo(() => {
-    const visible = store.products.filter(
-      (product) => brandFilter === null || product.brandId === brandFilter,
-    )
-    return store.categories
-      .filter((category) => brandFilter === null || category.brandId === brandFilter)
-      .map((category) => ({
-        category,
-        products: visible.filter((product) => product.categoryId === category.id),
-      }))
-      // An empty category is only worth showing to someone who can fill it.
-      .filter((group) => canEdit || group.products.length > 0)
-  }, [store.products, store.categories, brandFilter, canEdit])
+  // The server's arrangement, and — while a drag is under way or a new order is
+  // on its way to the server — the arrangement on screen. The override is
+  // dropped by itself once the server's arrangement changes.
+  const serverCategoryOrder = useMemo(() => store.categories.map((category) => category.id), [store.categories])
+  const serverLayout = useMemo(() => layoutOf(serverCategoryOrder, store.products), [serverCategoryOrder, store.products])
+  const serverKey = JSON.stringify([serverCategoryOrder, serverLayout])
+  const [override, setOverride] = useState<{ base: string; categoryOrder: string[]; layout: Layout } | null>(null)
+  const current = override && override.base === serverKey ? override : null
+  const categoryOrder = current?.categoryOrder ?? serverCategoryOrder
+  const layout = current?.layout ?? serverLayout
+  const categoryById = useMemo(() => new Map(store.categories.map((category) => [category.id, category])), [store.categories])
 
-  function commitPrice(productId: string) {
-    const sen = parseRinggitToSen(draftPrice)
-    if (sen !== null && sen >= 0) store.updatePrice(productId, sen)
-    setEditingPrice(null)
+  const shownCategories = categoryOrder
+    .map((id) => categoryById.get(id))
+    .filter((category): category is Category => category !== undefined)
+    .filter((category) => brandFilter === null || category.brandId === brandFilter)
+    // An empty category is only worth showing to someone who can fill it.
+    .filter((category) => canEdit || (layout[category.id]?.length ?? 0) > 0)
+
+  function arrange(next: { categoryOrder?: string[]; layout?: Layout }) {
+    setOverride({
+      base: serverKey,
+      categoryOrder: next.categoryOrder ?? categoryOrder,
+      layout: next.layout ?? layout,
+    })
+  }
+
+  /** Save, and if the server refuses, show its arrangement again. */
+  function save(change: MenuEdit) {
+    void edit(change).then((saved) => {
+      if (!saved) setOverride(null)
+    })
+  }
+
+  // An item dragged over another category moves into it straight away, so the
+  // owner sees where it will land.
+  function onDragOver({ active, over }: DragOverEvent) {
+    const dragging = String(active.id)
+    if (!over || !dragging.startsWith(ITEM)) return
+    const itemId = strip(dragging)
+    const overId = String(over.id)
+    const target = overId.startsWith(LIST) ? strip(overId) : overId.startsWith(ITEM) ? categoryOf(layout, strip(overId)) : null
+    const from = categoryOf(layout, itemId)
+    if (!target || !from || target === from) return
+    arrange({ layout: moveItem(layout, itemId, target, overId.startsWith(ITEM) ? strip(overId) : null) })
+  }
+
+  function onDragEnd({ active, over }: DragEndEvent) {
+    const dragging = String(active.id)
+    const overId = over ? String(over.id) : null
+
+    if (dragging.startsWith(CAT)) {
+      if (!overId || !overId.startsWith(CAT) || overId === dragging) return
+      const shown = shownCategories.map((category) => category.id)
+      const moved = arrayMove(shown, shown.indexOf(strip(dragging)), shown.indexOf(strip(overId)))
+      const full = reorderWithin(categoryOrder, moved)
+      arrange({ categoryOrder: full })
+      save({ kind: 'orderCategories', ids: full })
+      return
+    }
+
+    const itemId = strip(dragging)
+    const category = categoryOf(layout, itemId)
+    if (!category) return
+    let next = layout
+    if (overId?.startsWith(ITEM) && overId !== dragging && categoryOf(layout, strip(overId)) === category) {
+      const list = layout[category]!
+      next = { ...layout, [category]: arrayMove(list, list.indexOf(itemId), list.indexOf(strip(overId))) }
+      arrange({ layout: next })
+    }
+    // Only this category's list needs saving: an item that left another one
+    // takes nothing from the order of what stayed behind.
+    if (JSON.stringify(next[category]) !== JSON.stringify(serverLayout[category])) {
+      save({ kind: 'orderProducts', categoryId: category, ids: next[category]! })
+    }
   }
 
   const isEmpty = store.products.length === 0
@@ -713,6 +1064,7 @@ export function MenuScreen({ store }: { store: VistaStore }) {
         <p className="mt-2 max-w-3xl text-sm text-muted">
           Prices here are what the register charges. Changing one never alters a sale already made —
           past orders keep the price they were rung up at.
+          {canEdit ? ' Drag the handles to change the order the counter shows, or to move an item to another category.' : ''}
         </p>
       </div>
 
@@ -755,152 +1107,75 @@ export function MenuScreen({ store }: { store: VistaStore }) {
         </div>
       ) : null}
 
-      {grouped.map(({ category, products }) => (
-        <Panel key={category.id}>
-          {canEdit ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <InlineName
-                key={`${category.id}:${category.name}`}
-                name={category.name}
-                label="Category name"
-                onSave={(name) => void edit({ kind: 'renameCategory', id: category.id, name })}
-              />
-              {store.brands.length > 1 ? (
-                <Badge>{brandById.get(category.brandId)?.name ?? '—'}</Badge>
-              ) : null}
-              {products.length === 0 ? (
-                <IconButton
-                  label={`Delete ${category.name}`}
-                  tone="danger"
-                  onClick={() => void edit({ kind: 'deleteCategory', id: category.id })}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={menuCollision}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => setOverride(null)}
+      >
+        <SortableContext items={shownCategories.map((category) => CAT + category.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-6">
+            {shownCategories.map((category) => {
+              const itemIds = layout[category.id] ?? []
+              return (
+                <CategoryPanel
+                  key={category.id}
+                  category={category}
+                  itemCount={itemIds.length}
+                  store={store}
+                  edit={edit}
+                  brandName={store.brands.length > 1 ? (brandById.get(category.brandId)?.name ?? '—') : null}
+                  canEdit={canEdit}
                 >
-                  <Trash2 aria-hidden="true" className="size-4" />
-                </IconButton>
-              ) : null}
-            </div>
-          ) : (
-            <SectionHeading title={category.name} />
-          )}
+                  <SortableContext items={itemIds.map((id) => ITEM + id)} strategy={verticalListSortingStrategy}>
+                    <ItemList categoryId={category.id}>
+                      {itemIds.map((id) => {
+                        const product = productById.get(id)
+                        if (!product) return null
+                        return (
+                          <ItemRow
+                            key={id}
+                            product={product}
+                            store={store}
+                            edit={edit}
+                            brand={brandById.get(product.brandId)}
+                            canEdit={canEdit}
+                            isOpen={openProduct === id}
+                            onToggleOpen={() => setOpenProduct(openProduct === id ? null : id)}
+                          />
+                        )
+                      })}
+                      {canEdit && itemIds.length === 0 ? (
+                        <li className="py-3 text-sm text-muted">No items yet. Add one, or drag one here.</li>
+                      ) : null}
+                    </ItemList>
+                  </SortableContext>
 
-          <ul className="divide-y divide-slate-100">
-            {products.map((product) => (
-              <li key={product.id} className="flex flex-wrap items-center gap-3 py-3">
-                <ProductThumb product={product} brand={brandById.get(product.brandId)} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-black text-ink">{product.name}</p>
-                  <div className="flex flex-wrap gap-1">
-                    {product.isSoldOut ? <Badge tone="critical">Sold out</Badge> : null}
-                    {!product.isActive ? <Badge>Hidden</Badge> : null}
-                    {(product.modifierGroups?.length ?? 0) > 0 ? (
-                      <Badge tone="info">{product.modifierGroups?.length} option groups</Badge>
-                    ) : null}
-                  </div>
-                </div>
-
-                {editingPrice === product.id ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center border-2 border-rail px-2">
-                      <span className="text-xs font-black text-muted">RM</span>
-                      <input
-                        autoFocus
-                        inputMode="decimal"
-                        value={draftPrice}
-                        onChange={(event) => setDraftPrice(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') commitPrice(product.id)
-                          if (event.key === 'Escape') setEditingPrice(null)
-                        }}
-                        className="min-h-10 w-20 bg-transparent px-1 text-right font-black tabular outline-none"
+                  {canEdit ? (
+                    addingTo === category.id ? (
+                      <NewProductForm
+                        category={category}
+                        products={store.products}
+                        edit={edit}
+                        onDone={() => setAddingTo(null)}
                       />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => commitPrice(product.id)}
-                      className="vista-button-primary min-h-10"
-                    >
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingPrice(product.id)
-                      setDraftPrice((product.basePriceSen / 100).toFixed(2))
-                    }}
-                    className="min-h-10 border-b border-dotted border-muted px-2 text-base font-black tabular hover:bg-canvas"
-                  >
-                    {formatRinggit(product.basePriceSen)}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => store.toggleSoldOut(product.id)}
-                  className={`min-h-10 border px-3 text-xs font-bold ${
-                    product.isSoldOut
-                      ? 'border-good bg-good text-white'
-                      : 'border-line bg-surface text-slate-600 hover:bg-canvas'
-                  }`}
-                >
-                  {product.isSoldOut ? 'Back in stock' : 'Mark sold out'}
-                </button>
-
-                {canEdit && store.categories.length > 1 ? (
-                  <CategorySelect
-                    value={product.categoryId}
-                    categories={store.categories}
-                    brands={store.brands}
-                    label={`Move ${product.name} to another category`}
-                    onChange={(categoryId) =>
-                      void edit({ kind: 'updateProduct', id: product.id, changes: { categoryId } })
-                    }
-                  />
-                ) : null}
-
-                {canEdit ? (
-                  <IconButton
-                    label={`Edit ${product.name}`}
-                    onClick={() => setOpenProduct(openProduct === product.id ? null : product.id)}
-                  >
-                    <Pencil aria-hidden="true" className="size-4" />
-                  </IconButton>
-                ) : null}
-
-                {canEdit && openProduct === product.id ? (
-                  <ProductEditor
-                    product={product}
-                    products={store.products}
-                    categories={store.categories}
-                    brands={store.brands}
-                    edit={edit}
-                    onClose={() => setOpenProduct(null)}
-                  />
-                ) : null}
-              </li>
-            ))}
-          </ul>
-
-          {canEdit ? (
-            addingTo === category.id ? (
-              <NewProductForm
-                category={category}
-                products={store.products}
-                edit={edit}
-                onDone={() => setAddingTo(null)}
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => setAddingTo(category.id)}
-                className="mt-2 flex min-h-11 items-center gap-1 px-1 text-sm font-bold text-ink underline"
-              >
-                <Plus aria-hidden="true" className="size-4" /> Add item
-              </button>
-            )
-          ) : null}
-        </Panel>
-      ))}
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setAddingTo(category.id)}
+                        className="mt-2 flex min-h-11 items-center gap-1 px-1 text-sm font-bold text-ink underline"
+                      >
+                        <Plus aria-hidden="true" className="size-4" /> Add item
+                      </button>
+                    )
+                  ) : null}
+                </CategoryPanel>
+              )
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
 
       {canEdit ? (
         <Panel>

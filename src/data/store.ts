@@ -97,6 +97,12 @@ export type MenuEdit =
       isSoldOut?: boolean
     }
   | { kind: 'deleteOption'; id: string }
+  /** Drag and drop. Each sends the complete new order of one list. */
+  | { kind: 'orderCategories'; ids: string[] }
+  /** Items of a category in order; an item from elsewhere in the list moves here. */
+  | { kind: 'orderProducts'; categoryId: string; ids: string[] }
+  | { kind: 'orderGroups'; productId: string; ids: string[] }
+  | { kind: 'orderOptions'; groupId: string; ids: string[] }
 
 const noop = () => {}
 
