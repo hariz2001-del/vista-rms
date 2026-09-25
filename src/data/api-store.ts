@@ -16,7 +16,7 @@ import type {
   TerminalStatus,
 } from '../domain/types.ts'
 import { ApiError, apiRequest, SessionExpiredError } from '../lib/http.ts'
-import type { BalanceAdjustment, NewExpense, VistaStore } from './store.ts'
+import type { BalanceAdjustment, MenuEdit, NewExpense, VistaStore } from './store.ts'
 
 /**
  * The real books, read from api-vista.
@@ -57,6 +57,7 @@ type Snapshot = {
 const EMPTY_SETTINGS: AccountSettings = {
   businessName: 'Vista',
   outletName: '',
+  settlementEnabled: false,
   sharedOverheadFoodPct: 0,
   hostCommissionPct: 0,
   capitalAssetFoodPct: 0,
@@ -66,6 +67,68 @@ const EMPTY_TERMINAL: TerminalStatus = {
   lastSeenAt: null,
   consecutiveSyncFailures: 0,
   unsentSaleCount: 0,
+}
+
+/** The route each menu change goes to. */
+function menuRequest(edit: MenuEdit): ['POST' | 'PATCH' | 'DELETE', string, object?] {
+  switch (edit.kind) {
+    case 'addBrand':
+      return ['POST', '/rms/brands', { name: edit.name, colour: edit.colour }]
+    case 'updateBrand':
+      return ['PATCH', `/rms/brands/${edit.id}`, { name: edit.name, colour: edit.colour }]
+    case 'deleteBrand':
+      return ['DELETE', `/rms/brands/${edit.id}`]
+    case 'addCategory':
+      return ['POST', '/rms/categories', { brandId: edit.brandId, name: edit.name }]
+    case 'renameCategory':
+      return ['PATCH', `/rms/categories/${edit.id}`, { name: edit.name }]
+    case 'deleteCategory':
+      return ['DELETE', `/rms/categories/${edit.id}`]
+    case 'addProduct':
+      return [
+        'POST',
+        '/rms/products',
+        {
+          categoryId: edit.categoryId,
+          name: edit.name,
+          description: edit.description,
+          basePriceSen: edit.basePriceSen,
+          imageUrl: edit.imageUrl,
+        },
+      ]
+    case 'updateProduct':
+      return ['PATCH', `/rms/products/${edit.id}`, edit.changes]
+    case 'deleteProduct':
+      return ['DELETE', `/rms/products/${edit.id}`]
+    case 'addGroup':
+      return [
+        'POST',
+        `/rms/products/${edit.productId}/groups`,
+        { name: edit.name, minSelect: edit.minSelect, maxSelect: edit.maxSelect },
+      ]
+    case 'updateGroup':
+      return [
+        'PATCH',
+        `/rms/groups/${edit.id}`,
+        { name: edit.name, minSelect: edit.minSelect, maxSelect: edit.maxSelect },
+      ]
+    case 'deleteGroup':
+      return ['DELETE', `/rms/groups/${edit.id}`]
+    case 'addOption':
+      return [
+        'POST',
+        `/rms/groups/${edit.groupId}/options`,
+        { name: edit.name, priceSen: edit.priceSen, type: edit.type },
+      ]
+    case 'updateOption':
+      return [
+        'PATCH',
+        `/rms/options/${edit.id}`,
+        { name: edit.name, priceSen: edit.priceSen, type: edit.type, isSoldOut: edit.isSoldOut },
+      ]
+    case 'deleteOption':
+      return ['DELETE', `/rms/options/${edit.id}`]
+  }
 }
 
 function messageFor(error: unknown, action: string): string {
@@ -181,6 +244,26 @@ export function useApiStore(enabled: boolean): VistaStore {
   )
 
   /**
+   * One change from the menu builder. Resolves true once saved and re-read, so
+   * the form that sent it can close; false if it was refused, with the reason
+   * shown in the error banner.
+   */
+  const editMenu = useCallback(
+    async (edit: MenuEdit): Promise<boolean> => {
+      const [method, path, body] = menuRequest(edit)
+      try {
+        await apiRequest(method, path, body)
+        await refresh()
+        return true
+      } catch (caught) {
+        if (!(caught instanceof SessionExpiredError)) setError(messageFor(caught, 'The menu change'))
+        return false
+      }
+    },
+    [refresh],
+  )
+
+  /**
    * The split sliders call this on every movement. The screen follows the draft
    * immediately; the save is sent once the owner stops dragging.
    */
@@ -262,6 +345,8 @@ export function useApiStore(enabled: boolean): VistaStore {
       settleAdvance,
       toggleSoldOut,
       updatePrice,
+      editMenu,
+      canEditMenu: true,
       error,
       dismissError,
       isLoading: enabled && snapshot === null,
@@ -282,6 +367,7 @@ export function useApiStore(enabled: boolean): VistaStore {
       settleAdvance,
       toggleSoldOut,
       updatePrice,
+      editMenu,
       error,
       dismissError,
       enabled,

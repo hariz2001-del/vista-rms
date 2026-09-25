@@ -1,18 +1,21 @@
 import { LoaderCircle, LogIn } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { HUB_URL } from '../lib/mode.ts'
 
 type Props = {
   /** Resolves to an error message to show, or null once signed in. */
   onSignIn: (email: string, password: string) => Promise<string | null>
   /** Pre-fill and show the demo partner credentials. Local development only. */
   showDemoHint: boolean
+  /** Shown on arrival, e.g. when a sign-in link from vistahub.my had expired. */
+  initialError?: string | null
 }
 
-/** The owner dashboard's front door. Partner accounts only. */
-export function SignInScreen({ onSignIn, showDemoHint }: Props) {
+/** The owner dashboard's front door. Each business signs in with its own account. */
+export function SignInScreen({ onSignIn, showDemoHint, initialError = null }: Props) {
   const [email, setEmail] = useState(showDemoHint ? 'demo@vistahub.my' : '')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [isBusy, setIsBusy] = useState(false)
 
   async function handleSubmit(event: FormEvent) {
@@ -79,6 +82,13 @@ export function SignInScreen({ onSignIn, showDemoHint }: Props) {
           )}
           Sign in
         </button>
+
+        <p className="mt-5 text-center text-sm text-muted">
+          New business?{' '}
+          <a href={HUB_URL} className="font-bold text-ink underline">
+            Register at {new URL(HUB_URL).host}
+          </a>
+        </p>
 
         {showDemoHint ? (
           <p className="mt-5 border border-line bg-canvas p-3 text-xs text-muted">

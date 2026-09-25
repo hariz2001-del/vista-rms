@@ -8,6 +8,7 @@ const DRINKS = 'brand-drinks'
 const SETTINGS: AccountSettings = {
   businessName: 'Test',
   outletName: 'Test',
+  settlementEnabled: true,
   sharedOverheadFoodPct: 70,
   hostCommissionPct: 30,
   capitalAssetFoodPct: 50,

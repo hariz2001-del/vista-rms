@@ -20,15 +20,36 @@ export type Category = {
   name: string
 }
 
+export type ModifierOption = {
+  id: string
+  name: string
+  priceSen: number
+  type: 'ADD_ON' | 'REMOVAL'
+  isSoldOut: boolean
+}
+
+/** Choices on an item, like a size or extras. `minSelect > 0` means required. */
+export type ModifierGroup = {
+  id: string
+  name: string
+  minSelect: number
+  maxSelect: number
+  options: ModifierOption[]
+}
+
 export type Product = {
   id: string
   brandId: string
   categoryId: string
   name: string
+  /** Absent in the demo catalogue. */
+  description?: string
   basePriceSen: number
   imageUrl: string
   isSoldOut: boolean
   isActive: boolean
+  /** Absent in the demo catalogue. */
+  modifierGroups?: ModifierGroup[]
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +239,11 @@ export type PeriodClosure = {
 export type AccountSettings = {
   businessName: string
   outletName: string
+  /**
+   * Partner settlement: two brands, one partner each, and a payout between
+   * them. Off for a new business, which then never sees partners or splits.
+   */
+  settlementEnabled: boolean
   /** Share of shared overheads borne by Food. Drinks takes the remainder. */
   sharedOverheadFoodPct: number
   /** Host's cut of the Food net result. */

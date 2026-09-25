@@ -183,13 +183,15 @@ export function OverviewScreen({
             )
           })}
         </ul>
-        <button
-          type="button"
-          onClick={() => onNavigate('settlement')}
-          className="mt-5 flex min-h-11 items-center gap-2 border-t border-line pt-4 text-sm font-bold text-rail hover:underline"
-        >
-          See what each partner is owed <ArrowRight aria-hidden="true" className="size-4" />
-        </button>
+        {store.settings.settlementEnabled ? (
+          <button
+            type="button"
+            onClick={() => onNavigate('settlement')}
+            className="mt-5 flex min-h-11 items-center gap-2 border-t border-line pt-4 text-sm font-bold text-rail hover:underline"
+          >
+            See what each partner is owed <ArrowRight aria-hidden="true" className="size-4" />
+          </button>
+        ) : null}
         </Panel>
       </div>
     </div>

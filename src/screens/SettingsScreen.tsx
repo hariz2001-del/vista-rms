@@ -14,10 +14,20 @@ function clock(iso: string): string {
 }
 
 /**
- * A partner's name, saved when the field is left. Keyed on the saved name by
- * its parent, so a change arriving from the server replaces the draft.
+ * A name, saved when the field is left. Keyed on the saved name by its parent,
+ * so a change arriving from the server replaces the draft.
  */
-function PartnerNameField({ name, onSave }: { name: string; onSave: (next: string) => void }) {
+function NameField({
+  name,
+  label,
+  maxLength = 60,
+  onSave,
+}: {
+  name: string
+  label: string
+  maxLength?: number
+  onSave: (next: string) => void
+}) {
   const [draft, setDraft] = useState(name)
 
   function commit() {
@@ -34,10 +44,49 @@ function PartnerNameField({ name, onSave }: { name: string; onSave: (next: strin
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur()
       }}
-      maxLength={60}
-      aria-label="Partner name"
+      maxLength={maxLength}
+      aria-label={label}
       className="vista-control w-full max-w-xs px-3 text-sm font-black"
     />
+  )
+}
+
+/**
+ * Partner settlement is for a stall shared by two partners, one brand each.
+ * Off by default, so a solo shop never sees partners, splits or payouts.
+ */
+function SettlementSwitch({ store }: { store: VistaStore }) {
+  const on = store.settings.settlementEnabled
+  const hasTwoBrands = store.brands.length === 2
+
+  return (
+    <Panel>
+      <SectionHeading
+        title="Partner settlement"
+        hint="For a stall shared by two partners, each owning one brand. Splits shared costs between them and works out who pays whom each period."
+      />
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm font-black">{on ? 'On' : 'Off'}</span>
+        <button
+          type="button"
+          disabled={!on && !hasTwoBrands}
+          onClick={() => store.setSettings({ ...store.settings, settlementEnabled: !on })}
+          className="vista-button-secondary min-h-11 px-4 disabled:opacity-50"
+        >
+          {on ? 'Turn off' : 'Turn on'}
+        </button>
+        {!on && !hasTwoBrands ? (
+          <p className="text-xs font-semibold text-muted">
+            Needs exactly two brands, one per partner. Add them in Menu first.
+          </p>
+        ) : null}
+        {on ? (
+          <p className="text-xs font-semibold text-muted">
+            Turning it off hides settlement. Nothing already settled changes.
+          </p>
+        ) : null}
+      </div>
+    </Panel>
   )
 }
 
@@ -183,7 +232,7 @@ function RatioSlider({
 export function SettingsScreen({ store }: { store: VistaStore }) {
   const food = store.brands[0]
   const drinks = store.brands[1]
-  if (!food || !drinks) return null
+  const showSplit = store.settings.settlementEnabled && food !== undefined && drinks !== undefined
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -191,21 +240,37 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
         <p className="page-kicker">Business rules / effective now</p>
         <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Settings</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted">
-          Changing a ratio applies from now on. Expenses already logged keep the split they were
-          recorded with, so a past month can never be quietly rewritten.
+          Changes apply from now on. Anything already recorded keeps the figures it was recorded
+          with, so a past month can never be quietly rewritten.
         </p>
       </div>
 
       <Panel>
         <SectionHeading title="Business" />
         <dl className="divide-y divide-slate-100 text-sm">
-          <div className="flex justify-between py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 py-2">
             <dt className="font-semibold text-muted">Business name</dt>
-            <dd className="font-black">{store.settings.businessName}</dd>
+            <dd>
+              <NameField
+                key={store.settings.businessName}
+                name={store.settings.businessName}
+                label="Business name"
+                maxLength={80}
+                onSave={(businessName) => store.setSettings({ ...store.settings, businessName })}
+              />
+            </dd>
           </div>
-          <div className="flex justify-between py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 py-2">
             <dt className="font-semibold text-muted">Outlet</dt>
-            <dd className="font-black">{store.settings.outletName}</dd>
+            <dd>
+              <NameField
+                key={store.settings.outletName}
+                name={store.settings.outletName}
+                label="Outlet name"
+                maxLength={80}
+                onSave={(outletName) => store.setSettings({ ...store.settings, outletName })}
+              />
+            </dd>
           </div>
           <div className="flex justify-between py-2">
             <dt className="font-semibold text-muted">Trading day rolls over</dt>
@@ -218,23 +283,27 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
         </dl>
       </Panel>
 
-      <Panel>
-        <SectionHeading title="Brands" hint="Brand decides how sales and costs are attributed." />
-        <ul className="divide-y divide-slate-100">
-          {store.brands.map((brand) => (
-            <li key={brand.id} className="flex items-center gap-3 py-3">
-              <span
-                aria-hidden="true"
-                className="size-8 shrink-0"
-                style={{ backgroundColor: brand.colour }}
-              />
-              <span className="flex-1 text-sm font-black">{brand.name}</span>
-              <span className="font-mono text-xs text-muted">{brand.colour}</span>
-            </li>
-          ))}
-        </ul>
-      </Panel>
+      <SettlementSwitch store={store} />
 
+      {showSplit ? <SplitPanels store={store} food={food} drinks={drinks} /> : null}
+
+      <CounterPanel store={store} />
+    </div>
+  )
+}
+
+/** The split and the partners. Only for a business with settlement switched on. */
+function SplitPanels({
+  store,
+  food,
+  drinks,
+}: {
+  store: VistaStore
+  food: VistaStore['brands'][number]
+  drinks: VistaStore['brands'][number]
+}) {
+  return (
+    <>
       <Panel>
         <SectionHeading title="How money is split" />
 
@@ -300,9 +369,10 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
           {store.partners.map((partner) => (
             <li key={partner.id} className="flex items-center gap-3 py-3">
               <div className="flex-1">
-                <PartnerNameField
+                <NameField
                   key={`${partner.id}:${partner.name}`}
                   name={partner.name}
+                  label="Partner name"
                   onSave={(next) => store.renamePartner(partner.id, next)}
                 />
                 <p className="mt-1 text-xs font-semibold text-muted">
@@ -321,8 +391,6 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
           ))}
         </ul>
       </Panel>
-
-      <CounterPanel store={store} />
-    </div>
+    </>
   )
 }
