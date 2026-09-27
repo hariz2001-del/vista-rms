@@ -36,9 +36,12 @@
   --color-serious: #c2410c;
   --color-critical: #b91c1c;
 
-  --font-sans: "Aptos", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  --font-mono: "Cascadia Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  /* One typeface, the POS's, so the owner and the counter read as one product.
+     Display and mono stay as tokens so headings and figures can be restyled in
+     one place; figures keep their column alignment through tabular-nums below. */
+  --font-sans: "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: var(--font-sans);
 }
 
 :root {
@@ -175,7 +178,8 @@ main h1 {
 }
 
 /* Money reads as a column. Tabular figures keep the digits aligned. */
-.tabular {
+.tabular,
+.font-mono {
   font-variant-numeric: tabular-nums;
 }
 

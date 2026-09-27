@@ -3,6 +3,7 @@ import type {
   LedgerEntry,
   Order,
   OrderLine,
+  OrderLineModifier,
   Partner,
   PeriodClosure,
   Shift,
@@ -23,6 +24,42 @@ import { BRAND_DRINKS, BRAND_FOOD, PRODUCTS } from './catalogue.ts'
  */
 
 const SEED = 0x5153_7a11
+
+const ADD_ONS: Record<string, Record<number, OrderLineModifier[]>> = {
+  [BRAND_FOOD]: {
+    100: [{ name: 'Extra Sambal', priceSen: 100, type: 'ADD_ON' }],
+    150: [{ name: 'Telur Mata', priceSen: 150, type: 'ADD_ON' }],
+    200: [{ name: 'Extra Ayam', priceSen: 200, type: 'ADD_ON' }],
+    250: [
+      { name: 'Telur Mata', priceSen: 150, type: 'ADD_ON' },
+      { name: 'Extra Sambal', priceSen: 100, type: 'ADD_ON' },
+    ],
+  },
+  [BRAND_DRINKS]: {
+    100: [{ name: 'Extra Kaw', priceSen: 100, type: 'ADD_ON' }],
+    150: [{ name: 'Large', priceSen: 150, type: 'ADD_ON' }],
+    200: [{ name: 'Add Cincau', priceSen: 200, type: 'ADD_ON' }],
+    250: [
+      { name: 'Large', priceSen: 150, type: 'ADD_ON' },
+      { name: 'Extra Kaw', priceSen: 100, type: 'ADD_ON' },
+    ],
+  },
+}
+
+const PREP_NOTES: Record<string, OrderLineModifier> = {
+  [BRAND_FOOD]: { name: 'Tak Nak Timun', priceSen: 0, type: 'REMOVAL' },
+  [BRAND_DRINKS]: { name: 'Kurang Manis', priceSen: 0, type: 'ADD_ON' },
+}
+
+/**
+ * The options behind an already-drawn modifier total. Derived rather than drawn,
+ * so adding them does not shift the random stream every other figure depends on.
+ */
+function demoModifiers(brandId: string, modifierTotalSen: number, salt: number): OrderLineModifier[] {
+  const paid = ADD_ONS[brandId]?.[modifierTotalSen] ?? []
+  const note = salt % 4 === 0 ? PREP_NOTES[brandId] : undefined
+  return note ? [...paid, note] : paid
+}
 
 /** mulberry32 — small, fast, and identical on every machine and every reload. */
 function makeRng(seed: number): () => number {
@@ -153,6 +190,7 @@ export function generateHistory(): FakeHistory {
         // Add-ons roughly a third of the time.
         const modifierTotalSen = rng() < 0.34 ? pick([100, 150, 200, 250]) : 0
         lines.push({
+          productId: product.id,
           productName: product.name,
           brandId: product.brandId,
           categoryId: product.categoryId,
@@ -161,6 +199,7 @@ export function generateHistory(): FakeHistory {
           modifierTotalSen,
           lineDiscountSen: 0,
           allocatedOrderDiscountSen: 0,
+          modifiers: demoModifiers(product.brandId, modifierTotalSen, queue + l),
         })
       }
 

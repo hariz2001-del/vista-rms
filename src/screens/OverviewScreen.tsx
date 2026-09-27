@@ -2,6 +2,7 @@ import { ArrowRight, HandCoins, ReceiptText } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { DailySalesChart } from '../components/DailySalesChart.tsx'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
+import { SalesPerformanceBreakdown } from '../components/SalesPerformanceBreakdown.tsx'
 import { Badge, Money, Panel, SectionHeading, StatTile } from '../components/primitives.tsx'
 import type { ScreenKey } from '../components/AppShell.tsx'
 import type { VistaStore } from '../data/store.ts'
@@ -194,6 +195,17 @@ export function OverviewScreen({
         ) : null}
         </Panel>
       </div>
+
+      <Panel className="p-5">
+        <SalesPerformanceBreakdown
+          range={range}
+          orders={store.orders}
+          corrections={store.corrections}
+          categories={store.categories}
+          brands={store.brands}
+          periodNetSalesSen={summary.netSalesSen}
+        />
+      </Panel>
     </div>
   )
 }
