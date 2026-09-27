@@ -27,28 +27,28 @@ const SEED = 0x5153_7a11
 
 const ADD_ONS: Record<string, Record<number, OrderLineModifier[]>> = {
   [BRAND_FOOD]: {
-    100: [{ name: 'Extra Sambal', priceSen: 100, type: 'ADD_ON' }],
-    150: [{ name: 'Telur Mata', priceSen: 150, type: 'ADD_ON' }],
-    200: [{ name: 'Extra Ayam', priceSen: 200, type: 'ADD_ON' }],
+    100: [{ groupName: 'Sauces', name: 'Extra Sambal', priceSen: 100, type: 'ADD_ON' }],
+    150: [{ groupName: 'Add-ons', name: 'Telur Mata', priceSen: 150, type: 'ADD_ON' }],
+    200: [{ groupName: 'Add-ons', name: 'Extra Ayam', priceSen: 200, type: 'ADD_ON' }],
     250: [
-      { name: 'Telur Mata', priceSen: 150, type: 'ADD_ON' },
-      { name: 'Extra Sambal', priceSen: 100, type: 'ADD_ON' },
+      { groupName: 'Add-ons', name: 'Telur Mata', priceSen: 150, type: 'ADD_ON' },
+      { groupName: 'Sauces', name: 'Extra Sambal', priceSen: 100, type: 'ADD_ON' },
     ],
   },
   [BRAND_DRINKS]: {
-    100: [{ name: 'Extra Kaw', priceSen: 100, type: 'ADD_ON' }],
-    150: [{ name: 'Large', priceSen: 150, type: 'ADD_ON' }],
-    200: [{ name: 'Add Cincau', priceSen: 200, type: 'ADD_ON' }],
+    100: [{ groupName: 'Extras', name: 'Extra Kaw', priceSen: 100, type: 'ADD_ON' }],
+    150: [{ groupName: 'Cup size', name: 'Large', priceSen: 150, type: 'ADD_ON' }],
+    200: [{ groupName: 'Toppings', name: 'Add Cincau', priceSen: 200, type: 'ADD_ON' }],
     250: [
-      { name: 'Large', priceSen: 150, type: 'ADD_ON' },
-      { name: 'Extra Kaw', priceSen: 100, type: 'ADD_ON' },
+      { groupName: 'Cup size', name: 'Large', priceSen: 150, type: 'ADD_ON' },
+      { groupName: 'Extras', name: 'Extra Kaw', priceSen: 100, type: 'ADD_ON' },
     ],
   },
 }
 
 const PREP_NOTES: Record<string, OrderLineModifier> = {
-  [BRAND_FOOD]: { name: 'Tak Nak Timun', priceSen: 0, type: 'REMOVAL' },
-  [BRAND_DRINKS]: { name: 'Kurang Manis', priceSen: 0, type: 'ADD_ON' },
+  [BRAND_FOOD]: { groupName: 'Remove', name: 'Tak Nak Timun', priceSen: 0, type: 'REMOVAL' },
+  [BRAND_DRINKS]: { groupName: 'Drink preferences', name: 'Kurang Manis', priceSen: 0, type: 'ADD_ON' },
 }
 
 /**

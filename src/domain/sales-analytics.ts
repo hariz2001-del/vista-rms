@@ -1,4 +1,4 @@
-import type { Category, Order, OrderLine, SaleCorrection } from './types.ts'
+import type { Category, Order, OrderLine, OrderLineModifier, SaleCorrection } from './types.ts'
 import { assertSen } from './money.ts'
 import { inRange, type DateRange } from './selectors.ts'
 
@@ -28,6 +28,8 @@ export type ProductSales = {
   discountSen: number
   /** `baseSen + modifierSen − discountSen`. */
   netSen: number
+  /** The options chosen on this product, including zero-priced prep notes. */
+  modifiers: ModifierSales[]
 }
 
 export type CategorySales = {
@@ -41,6 +43,8 @@ export type CategorySales = {
 
 export type ModifierSales = {
   key: string
+  /** The option group, or {@link UNGROUPED} when the snapshot does not say. */
+  groupName: string
   name: string
   brandId: string
   type: 'ADD_ON' | 'REMOVAL'
@@ -53,6 +57,16 @@ export type ModifierSales = {
   /** Distinct products it was chosen on, alphabetical. */
   productNames: string[]
 }
+
+/** Add-ons under one option group, like every "Cup size" choice together. */
+export type ModifierGroupSales = {
+  groupName: string
+  count: number
+  revenueSen: number
+  modifiers: ModifierSales[]
+}
+
+export const UNGROUPED = 'Other options'
 
 export type SalesBreakdown = {
   products: ProductSales[]
@@ -87,6 +101,65 @@ function productKey(line: OrderLine): string {
   return line.productId ?? `${line.brandId}:${line.productName}`
 }
 
+type ModifierAccumulator = Map<string, ModifierSales & { products: Set<string> }>
+
+function addModifier(into: ModifierAccumulator, line: OrderLine, modifier: OrderLineModifier) {
+  const groupName = modifier.groupName?.trim() || UNGROUPED
+  const key = `${line.brandId}:${groupName}:${modifier.type}:${modifier.name}`
+  const entry = into.get(key) ?? {
+    key,
+    groupName,
+    name: modifier.name,
+    brandId: line.brandId,
+    type: modifier.type,
+    count: 0,
+    minPriceSen: modifier.priceSen,
+    maxPriceSen: modifier.priceSen,
+    revenueSen: 0,
+    productNames: [],
+    products: new Set<string>(),
+  }
+  entry.count += line.quantity
+  entry.revenueSen += modifier.priceSen * line.quantity
+  entry.minPriceSen = Math.min(entry.minPriceSen, modifier.priceSen)
+  entry.maxPriceSen = Math.max(entry.maxPriceSen, modifier.priceSen)
+  entry.products.add(line.productName)
+  into.set(key, entry)
+}
+
+function finishModifiers(from: ModifierAccumulator): ModifierSales[] {
+  return [...from.values()].map(({ products: names, ...entry }) => ({
+    ...entry,
+    productNames: [...names].toSorted((a, b) => a.localeCompare(b)),
+  }))
+}
+
+/**
+ * Sections add-ons by their option group. Groups come out busiest first, and the
+ * catch-all for unnamed groups always last.
+ */
+export function groupModifiers(rows: readonly ModifierSales[]): ModifierGroupSales[] {
+  const groups = new Map<string, ModifierGroupSales>()
+  for (const row of rows) {
+    const group = groups.get(row.groupName) ?? {
+      groupName: row.groupName,
+      count: 0,
+      revenueSen: 0,
+      modifiers: [],
+    }
+    group.count += row.count
+    group.revenueSen += row.revenueSen
+    group.modifiers.push(row)
+    groups.set(row.groupName, group)
+  }
+  return [...groups.values()].toSorted(
+    (a, b) =>
+      Number(a.groupName === UNGROUPED) - Number(b.groupName === UNGROUPED) ||
+      b.count - a.count ||
+      a.groupName.localeCompare(b.groupName),
+  )
+}
+
 export function salesBreakdown(
   orders: readonly Order[],
   corrections: readonly SaleCorrection[],
@@ -103,7 +176,8 @@ export function salesBreakdown(
   const counted = periodOrders.filter((order) => !cancelled.has(order.id))
 
   const products = new Map<string, ProductSales>()
-  const modifiers = new Map<string, ModifierSales & { products: Set<string> }>()
+  const modifiers: ModifierAccumulator = new Map()
+  const modifiersByProduct = new Map<string, ModifierAccumulator>()
 
   for (const order of counted) {
     for (const line of order.lines) {
@@ -122,6 +196,7 @@ export function salesBreakdown(
         modifierSen: 0,
         discountSen: 0,
         netSen: 0,
+        modifiers: [],
       }
       row.quantity += line.quantity
       row.baseSen += baseSen
@@ -133,31 +208,19 @@ export function salesBreakdown(
       row.categoryId = line.categoryId
       products.set(key, row)
 
+      const ownModifiers = modifiersByProduct.get(key) ?? new Map()
+      modifiersByProduct.set(key, ownModifiers)
       for (const modifier of line.modifiers ?? []) {
-        const modifierKey = `${line.brandId}:${modifier.type}:${modifier.name}`
-        const entry = modifiers.get(modifierKey) ?? {
-          key: modifierKey,
-          name: modifier.name,
-          brandId: line.brandId,
-          type: modifier.type,
-          count: 0,
-          minPriceSen: modifier.priceSen,
-          maxPriceSen: modifier.priceSen,
-          revenueSen: 0,
-          productNames: [],
-          products: new Set<string>(),
-        }
-        entry.count += line.quantity
-        entry.revenueSen += modifier.priceSen * line.quantity
-        entry.minPriceSen = Math.min(entry.minPriceSen, modifier.priceSen)
-        entry.maxPriceSen = Math.max(entry.maxPriceSen, modifier.priceSen)
-        entry.products.add(line.productName)
-        modifiers.set(modifierKey, entry)
+        addModifier(modifiers, line, modifier)
+        addModifier(ownModifiers, line, modifier)
       }
     }
   }
 
-  const productRows = [...products.values()]
+  const productRows = [...products.values()].map((row) => ({
+    ...row,
+    modifiers: finishModifiers(modifiersByProduct.get(row.key) ?? new Map()),
+  }))
 
   const netByBrand = new Map<string, number>()
   for (const row of productRows) {
@@ -184,10 +247,7 @@ export function salesBreakdown(
   return {
     products: productRows,
     categories: [...categoryRows.values()],
-    modifiers: [...modifiers.values()].map(({ products: names, ...entry }) => ({
-      ...entry,
-      productNames: [...names].toSorted((a, b) => a.localeCompare(b)),
-    })),
+    modifiers: finishModifiers(modifiers),
     netByBrand,
     netSen: productRows.reduce((sum, row) => sum + row.netSen, 0),
     cancelledOrderCount: periodOrders.length - counted.length,
