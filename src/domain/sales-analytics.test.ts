@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Category, Order, OrderLine, SaleCorrection } from './types.ts'
 import {
+  UNGROUPED,
+  groupModifiers,
   lineNetSen,
   matchesSearch,
   salesBreakdown,
@@ -246,6 +248,74 @@ describe('salesBreakdown', () => {
     expect(breakdown.products).toHaveLength(1)
     expect(breakdown.products[0]).toMatchObject({ quantity: 2, modifierSen: 200 })
     expect(breakdown.modifiers).toEqual([])
+  })
+})
+
+describe('add-ons by product and by option group', () => {
+  const breakdown = salesBreakdown(
+    [
+      order('1', [
+        line({
+          quantity: 2,
+          modifierTotalSen: 150,
+          modifiers: [
+            { groupName: 'Cup size', name: 'Large', priceSen: 150, type: 'ADD_ON' },
+            { groupName: 'Preferences', name: 'Kurang Manis', priceSen: 0, type: 'ADD_ON' },
+          ],
+        }),
+        line({
+          productId: 'goreng',
+          productName: 'Nasi Goreng',
+          modifierTotalSen: 150,
+          modifiers: [{ groupName: 'Cup size', name: 'Large', priceSen: 150, type: 'ADD_ON' }],
+        }),
+      ]),
+      order('2', [line({ modifiers: [{ name: 'Old option', priceSen: 50, type: 'ADD_ON' }], modifierTotalSen: 50 })]),
+    ],
+    [],
+    CATEGORIES,
+    RANGE,
+  )
+
+  it('keeps each product’s own add-ons, counted on that product only', () => {
+    const nasi = breakdown.products.find((row) => row.name === 'Nasi Lemak')
+    expect(nasi?.quantity).toBe(3)
+    expect(nasi?.modifiers.map((m) => [m.groupName, m.name, m.count, m.revenueSen])).toEqual([
+      ['Cup size', 'Large', 2, 300],
+      ['Preferences', 'Kurang Manis', 2, 0],
+      [UNGROUPED, 'Old option', 1, 50],
+    ])
+    // Across the whole counter, Large sums both products.
+    expect(breakdown.modifiers.find((m) => m.name === 'Large')).toMatchObject({ count: 3, revenueSen: 450 })
+  })
+
+  it('sections add-ons by group, busiest first, unnamed options last', () => {
+    const groups = groupModifiers(breakdown.modifiers)
+    expect(groups.map((g) => [g.groupName, g.count, g.revenueSen])).toEqual([
+      ['Cup size', 3, 450],
+      ['Preferences', 2, 0],
+      [UNGROUPED, 1, 50],
+    ])
+  })
+
+  it('treats the same option name in two groups as two add-ons', () => {
+    const split = salesBreakdown(
+      [
+        order('1', [
+          line({
+            modifiers: [
+              { groupName: 'Sauce', name: 'Extra', priceSen: 50, type: 'ADD_ON' },
+              { groupName: 'Protein', name: 'Extra', priceSen: 300, type: 'ADD_ON' },
+            ],
+            modifierTotalSen: 350,
+          }),
+        ]),
+      ],
+      [],
+      CATEGORIES,
+      RANGE,
+    )
+    expect(split.modifiers).toHaveLength(2)
   })
 })
 

@@ -73,6 +73,11 @@ export type FlagStatus = 'NONE' | 'FLAGGED' | 'DISMISSED' | 'RESOLVED_REFUND' | 
 
 /** An option as it was charged on the line, per unit. Zero-priced ones are prep notes. */
 export type OrderLineModifier = {
+  /**
+   * The option group it was picked from, like "Cup size". Null when the option
+   * has since been deleted from the menu, or on snapshots from before it was sent.
+   */
+  groupName?: string | null
   name: string
   priceSen: number
   type: 'ADD_ON' | 'REMOVAL'
