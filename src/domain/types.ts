@@ -71,7 +71,16 @@ export type Shift = {
 
 export type FlagStatus = 'NONE' | 'FLAGGED' | 'DISMISSED' | 'RESOLVED_REFUND' | 'RESOLVED_ADJUSTMENT'
 
+/** An option as it was charged on the line, per unit. Zero-priced ones are prep notes. */
+export type OrderLineModifier = {
+  name: string
+  priceSen: number
+  type: 'ADD_ON' | 'REMOVAL'
+}
+
 export type OrderLine = {
+  /** Absent on snapshots from before the API sent it. */
+  productId?: string
   productName: string
   brandId: string
   categoryId: string
@@ -80,6 +89,8 @@ export type OrderLine = {
   modifierTotalSen: number
   lineDiscountSen: number
   allocatedOrderDiscountSen: number
+  /** Absent on snapshots from before the API sent it. */
+  modifiers?: OrderLineModifier[]
 }
 
 export type Order = {
