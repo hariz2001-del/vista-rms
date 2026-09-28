@@ -37,6 +37,14 @@ export const OVERALL_KEY = 'overall'
 export const OTHER_KEY = 'other'
 export const HOUR_MS = 3_600_000
 
+/** Minutes per point on a single day's chart, trading-chart style: H4, H1, M30. */
+export type TimeFrame = 240 | 60 | 30
+export const TIME_FRAMES: Array<{ minutes: TimeFrame; label: string }> = [
+  { minutes: 240, label: 'H4' },
+  { minutes: 60, label: 'H1' },
+  { minutes: 30, label: 'M30' },
+]
+
 /** The validated categorical order (light surface #fffdf8), assigned by menu position. */
 export const CATEGORY_COLOURS = [
   '#2a78d6',
@@ -128,6 +136,8 @@ export function salesSeries(
   /** The owner's "day starts at" hour: a business day's 24 hours begin here. */
   dayRolloverHour = 5,
   now: Date = new Date(),
+  /** A single day's time frame: 240 (H4), 60 (H1) or 30 (M30). */
+  frameMinutes: TimeFrame = 60,
 ): SalesSeries {
   const cancelled = new Set(
     corrections.filter((c) => c.kind === 'CANCEL').map((c) => c.originalOrderId),
@@ -171,7 +181,7 @@ export function salesSeries(
     }
   }
 
-  // ---- One day: net sales inside each of its 24 hours ----
+  // ---- One day: net sales inside each time frame of its 24 hours ----
   type Event = { ms: number; amounts: Array<[string | null, number]> }
   const events: Event[] = [
     ...periodOrders.map((order) => ({
@@ -189,11 +199,13 @@ export function salesSeries(
   // the next day, on the Malaysian clock (UTC+8): with a 5am rollover, 5am to
   // 4:59am. A night shift therefore sits inside one day, past 12am included.
   const dayStart = Date.parse(`${range.startDate}T00:00:00Z`) + (dayRolloverHour - 8) * HOUR_MS
-  const buckets = Array.from({ length: 24 }, () => emptyValues(defs))
+  const frameMs = frameMinutes * 60_000
+  const frameCount = (24 * HOUR_MS) / frameMs
+  const buckets = Array.from({ length: frameCount }, () => emptyValues(defs))
   for (const event of events) {
     // A sale filed under this date but outside its window (the rollover was
     // changed since) goes to the nearest end rather than being lost.
-    const index = Math.min(23, Math.max(0, Math.floor((event.ms - dayStart) / HOUR_MS)))
+    const index = Math.min(frameCount - 1, Math.max(0, Math.floor((event.ms - dayStart) / frameMs)))
     const values = buckets[index]
     if (!values) continue
     for (const [key, sen] of event.amounts) add(values, key, sen)
@@ -208,7 +220,7 @@ export function salesSeries(
     kind: 'TIME',
     defs,
     points: buckets.map((values, index) => {
-      const start = dayStart + index * HOUR_MS
+      const start = dayStart + index * frameMs
       return start > now.getTime() && start > lastEvent
         ? { at: new Date(start).toISOString(), values, isFuture: true }
         : { at: new Date(start).toISOString(), values }

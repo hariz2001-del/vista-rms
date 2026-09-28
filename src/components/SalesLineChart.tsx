@@ -1,12 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { formatRinggit, formatRinggitShort } from '../domain/money.ts'
 import {
-  HOUR_MS,
+  TIME_FRAMES,
   salesSeries,
   seriesTotals,
   type SalesSeries,
   type SeriesDef,
   type SeriesMode,
+  type TimeFrame,
 } from '../domain/sales-series.ts'
 import type { DateRange } from '../domain/selectors.ts'
 import type { Brand, Category, Order, SaleCorrection } from '../domain/types.ts'
@@ -50,21 +51,31 @@ const longDayFormat = new Intl.DateTimeFormat('en-MY', {
   timeZone: 'UTC',
 })
 const hourFormat = new Intl.DateTimeFormat('en-MY', { hour: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
+const minuteFormat = new Intl.DateTimeFormat('en-MY', {
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZone: 'Asia/Kuala_Lumpur',
+})
 
-/** A day ("28 Sept"), or an hour: "9 pm" on the axis, "9 pm – 10 pm" in full. */
-function pointLabel(series: SalesSeries, at: string, long = false): string {
+/** "9 pm" on the hour, "9:30 pm" otherwise. */
+function clock(date: Date): string {
+  return (date.getUTCMinutes() === 0 ? hourFormat : minuteFormat).format(date)
+}
+
+/** A day ("28 Sept"), or a time frame: "9 pm" on the axis, "9:30 pm – 10 pm" in full. */
+function pointLabel(series: SalesSeries, at: string, long = false, frameMinutes = 60): string {
   if (series.kind === 'TIME') {
     const start = new Date(at)
     return long
-      ? `${hourFormat.format(start)} – ${hourFormat.format(new Date(start.getTime() + HOUR_MS))}`
-      : hourFormat.format(start)
+      ? `${clock(start)} – ${clock(new Date(start.getTime() + frameMinutes * 60_000))}`
+      : clock(start)
   }
   return (long ? longDayFormat : dayFormat).format(new Date(`${at}T12:00:00Z`))
 }
 
 /**
- * Net sales as lines — per day across a range, or per hour through a single
- * day. Overall, by brand, or one brand's categories, each line switchable.
+ * Net sales as lines — per day across a range, or per time frame (H4, H1, M30)
+ * through a single day. Overall, by brand, or one brand's categories, each line switchable.
  *
  * One y-axis, recessive grid, 2px lines, a crosshair with every visible line's
  * value on hover or arrow keys, and a table of the same figures. A long range
@@ -83,6 +94,7 @@ export function SalesLineChart({
   const [categoryBrandId, setCategoryBrandId] = useState<string | null>(brands[0]?.id ?? null)
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const [showTable, setShowTable] = useState(false)
+  const [frame, setFrame] = useState<TimeFrame>(60)
   const [active, setActive] = useState<number | null>(null)
   const [viewport, setViewport] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -90,8 +102,19 @@ export function SalesLineChart({
   const brandForCategories = categoryBrandId ?? brands[0]?.id ?? null
   const series = useMemo(
     () =>
-      salesSeries(orders, corrections, range, mode, brands, categories, brandForCategories, dayRolloverHour),
-    [orders, corrections, range, mode, brands, categories, brandForCategories, dayRolloverHour],
+      salesSeries(
+        orders,
+        corrections,
+        range,
+        mode,
+        brands,
+        categories,
+        brandForCategories,
+        dayRolloverHour,
+        new Date(),
+        frame,
+      ),
+    [orders, corrections, range, mode, brands, categories, brandForCategories, dayRolloverHour, frame],
   )
   const totals = useMemo(() => seriesTotals(series), [series])
   const visible = series.defs.filter((def) => !hidden.has(def.key))
@@ -146,11 +169,15 @@ export function SalesLineChart({
       .map((point, index) => `${index === 0 ? 'M' : 'L'}${xAt(index).toFixed(1)},${yAt(point.values[def.key] ?? 0).toFixed(1)}`)
       .join(' ')
 
-  // Thinned so labels sit at least ~56px apart, always keeping the latest.
-  const labelEvery = Math.max(1, Math.ceil(56 / (innerWidth / Math.max(1, count - 1))))
-  const xLabels = series.points
-    .map((point, index) => ({ index, x: xAt(index), label: pointLabel(series, point.at) }))
-    .filter((item) => (count - 1 - item.index) % labelEvery === 0)
+  // Axis labels only ever on the hour, whatever the time frame — the frame
+  // changes the points and the line, not the clock. Thinned to ~56px apart,
+  // always keeping the latest.
+  const onTheHour = series.points
+    .map((point, index) => ({ index, x: xAt(index), label: pointLabel(series, point.at), at: point.at }))
+    .filter((item) => series.kind === 'DAY' || new Date(item.at).getUTCMinutes() === 0)
+  const labelGap = onTheHour.length > 1 ? (onTheHour[1]?.x ?? 0) - (onTheHour[0]?.x ?? 0) : innerWidth
+  const labelEvery = Math.max(1, Math.ceil(56 / Math.max(1, labelGap)))
+  const xLabels = onTheHour.filter((_, position) => (onTheHour.length - 1 - position) % labelEvery === 0)
 
   function nearestIndex(x: number): number {
     let best = 0
@@ -186,10 +213,11 @@ export function SalesLineChart({
   }
 
   const activePoint = active === null ? null : series.points[active]
-  const title = series.kind === 'DAY' ? 'Net sales by day' : 'Net sales by hour'
+  const frameWords = { 240: 'each 4 hours', 60: 'each hour', 30: 'each half hour' }[frame]
+  const title = series.kind === 'DAY' ? 'Net sales by day' : 'Net sales by time frame'
   const note = [
     series.kind === 'TIME'
-      ? 'Hourly net sales velocity. Shows order spikes and quiet periods throughout the shift.'
+      ? `Net sales in ${frameWords}. Shows order spikes and quiet periods throughout the shift.`
       : null,
     mode === 'CATEGORY'
       ? 'Sale lines only: cancelled sales are left out and exchanges count as first rung up.'
@@ -220,6 +248,24 @@ export function SalesLineChart({
               </button>
             ))}
           </div>
+          {series.kind === 'TIME' ? (
+            <div role="group" aria-label="Time frame" className="flex border border-line font-mono text-xs font-bold">
+              {TIME_FRAMES.map((option) => (
+                <button
+                  key={option.minutes}
+                  type="button"
+                  aria-pressed={frame === option.minutes}
+                  onClick={() => setFrame(option.minutes)}
+                  title={{ 240: '4 hours', 60: '1 hour', 30: '30 minutes' }[option.minutes]}
+                  className={`min-h-9 px-2.5 ${
+                    frame === option.minutes ? 'bg-ink text-white' : 'text-muted hover:bg-canvas'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {mode === 'CATEGORY' ? (
             <div role="group" aria-label="Brand" className="flex gap-1 text-xs font-bold">
               {brands.map((brand) => (
@@ -288,7 +334,7 @@ export function SalesLineChart({
             <thead className="sticky top-0 bg-canvas text-xs uppercase tracking-wider text-muted">
               <tr>
                 <th className="sticky left-0 bg-canvas p-2 text-left font-bold">
-                  {series.kind === 'DAY' ? 'Date' : 'Hour'}
+                  {series.kind === 'DAY' ? 'Date' : 'Time'}
                 </th>
                 {visible.map((def) => (
                   <th key={def.key} className="p-2 text-right font-bold">
@@ -302,7 +348,7 @@ export function SalesLineChart({
               {drawn.map((point, index) => (
                 <tr key={`${point.at}-${index}`} className="border-t border-slate-100">
                   <td className="sticky left-0 bg-surface p-2 font-semibold whitespace-nowrap">
-                    {pointLabel(series, point.at, true)}
+                    {pointLabel(series, point.at, true, frame)}
                   </td>
                   {visible.map((def) => (
                     <td key={def.key} className="p-2 text-right tabular whitespace-nowrap">
@@ -452,7 +498,7 @@ export function SalesLineChart({
                       : { left: xAt(active) + 12 }
                   }
                 >
-                  <p className="font-black">{pointLabel(series, activePoint.at, true)}</p>
+                  <p className="font-black">{pointLabel(series, activePoint.at, true, frame)}</p>
                   {activePoint.isFuture ? <p className="mt-0.5 text-white/70">Still to come</p> : null}
                   {activePoint.isFuture ? null : visible.map((def) => (
                     <p key={def.key} className="mt-0.5 flex items-center gap-2">
