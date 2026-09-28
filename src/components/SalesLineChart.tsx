@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { formatRinggit, formatRinggitShort } from '../domain/money.ts'
 import {
+  HOUR_MS,
   salesSeries,
   seriesTotals,
   type SalesSeries,
@@ -46,33 +47,22 @@ const longDayFormat = new Intl.DateTimeFormat('en-MY', {
   month: 'short',
   timeZone: 'UTC',
 })
-const timeFormat = new Intl.DateTimeFormat('en-MY', {
-  hour: 'numeric',
-  minute: '2-digit',
-  timeZone: 'Asia/Kuala_Lumpur',
-})
 const hourFormat = new Intl.DateTimeFormat('en-MY', { hour: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
 
+/** A day ("28 Sept"), or an hour: "9 pm" on the axis, "9 pm – 10 pm" in full. */
 function pointLabel(series: SalesSeries, at: string, long = false): string {
-  if (series.kind === 'TIME') return timeFormat.format(new Date(at))
+  if (series.kind === 'TIME') {
+    const start = new Date(at)
+    return long
+      ? `${hourFormat.format(start)} – ${hourFormat.format(new Date(start.getTime() + HOUR_MS))}`
+      : hourFormat.format(start)
+  }
   return (long ? longDayFormat : dayFormat).format(new Date(`${at}T12:00:00Z`))
 }
 
-/** Hour marks for a time axis, on the Malaysian clock (UTC+8, whole hours). */
-function hourTicks(fromMs: number, toMs: number): number[] {
-  const hour = 3_600_000
-  const offset = 8 * hour
-  const first = Math.ceil((fromMs + offset) / hour) * hour - offset
-  const span = toMs - fromMs
-  const every = span > 10 * hour ? 2 : 1
-  const ticks: number[] = []
-  for (let t = first; t <= toMs; t += every * hour) ticks.push(t)
-  return ticks
-}
-
 /**
- * Net sales as lines — per day across a range, or a running total through a
- * single day. Overall, by brand, or one brand's categories, each line switchable.
+ * Net sales as lines — per day across a range, or per hour through a single
+ * day. Overall, by brand, or one brand's categories, each line switchable.
  *
  * One y-axis, recessive grid, 2px lines, a crosshair with every visible line's
  * value on hover or arrow keys, and a table of the same figures. A long range
@@ -121,38 +111,32 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
 
   useEffect(() => setActive(null), [series])
 
-  const times = series.kind === 'TIME' ? series.points.map((point) => Date.parse(point.at)) : []
-  const t0 = times[0] ?? 0
-  const t1 = Math.max(times.at(-1) ?? 0, t0 + 60_000)
+  // Days and hours are both evenly spaced, so both sit on an even grid.
   const xAt = (index: number): number =>
-    series.kind === 'DAY'
-      ? PAD.side + (count <= 1 ? innerWidth / 2 : (index / (count - 1)) * innerWidth)
-      : PAD.side + (((times[index] ?? t0) - t0) / (t1 - t0)) * innerWidth
+    PAD.side + (count <= 1 ? innerWidth / 2 : (index / (count - 1)) * innerWidth)
 
   const values = visible.flatMap((def) => series.points.map((point) => point.values[def.key] ?? 0))
+  // Round gridlines on one step, so an hour below zero still reads 0, 100, 200 …
   const minValue = Math.min(0, ...values)
-  const maxValue = niceCeiling(Math.max(0, ...values))
-  const floor = minValue < 0 ? -niceCeiling(-minValue) : 0
+  const rawMax = Math.max(0, ...values)
+  const tickStep = niceCeiling(Math.max(1, rawMax - minValue) / 4)
+  const floor = Math.floor(minValue / tickStep) * tickStep
+  const maxValue = Math.max(floor + tickStep, Math.ceil(rawMax / tickStep) * tickStep)
   const yAt = (sen: number) => PAD.top + plotHeight - ((sen - floor) / (maxValue - floor)) * plotHeight
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(floor + (maxValue - floor) * f))
+  const ticks: number[] = []
+  for (let tick = floor; tick <= maxValue; tick += tickStep) ticks.push(tick)
+  const tickLabel = (sen: number) => (sen < 0 ? `−${formatRinggitShort(-sen)}` : formatRinggitShort(sen))
 
   const pathFor = (def: SeriesDef) =>
     series.points
       .map((point, index) => `${index === 0 ? 'M' : 'L'}${xAt(index).toFixed(1)},${yAt(point.values[def.key] ?? 0).toFixed(1)}`)
       .join(' ')
 
-  const xLabels: Array<{ x: number; label: string }> =
-    series.kind === 'DAY'
-      ? series.points
-          .map((point, index) => ({ index, x: xAt(index), label: pointLabel(series, point.at) }))
-          .filter((item, _, all) => {
-            const every = Math.max(1, Math.ceil(56 / (innerWidth / Math.max(1, all.length - 1))))
-            return (count - 1 - item.index) % every === 0
-          })
-      : hourTicks(t0, t1).map((t) => ({
-          x: PAD.side + ((t - t0) / (t1 - t0)) * innerWidth,
-          label: hourFormat.format(new Date(t)),
-        }))
+  // Thinned so labels sit at least ~56px apart, always keeping the latest.
+  const labelEvery = Math.max(1, Math.ceil(56 / (innerWidth / Math.max(1, count - 1))))
+  const xLabels = series.points
+    .map((point, index) => ({ index, x: xAt(index), label: pointLabel(series, point.at) }))
+    .filter((item) => (count - 1 - item.index) % labelEvery === 0)
 
   function nearestIndex(x: number): number {
     let best = 0
@@ -188,13 +172,17 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
   }
 
   const activePoint = active === null ? null : series.points[active]
-  const title = series.kind === 'DAY' ? 'Net sales by day' : 'Net sales through the day'
-  const note =
+  const title = series.kind === 'DAY' ? 'Net sales by day' : 'Net sales by hour'
+  const note = [
+    series.kind === 'TIME'
+      ? 'Hourly net sales velocity. Shows order spikes and quiet periods throughout the shift.'
+      : null,
     mode === 'CATEGORY'
       ? 'Sale lines only: cancelled sales are left out and exchanges count as first rung up.'
-      : series.kind === 'TIME'
-        ? 'A running total, sale by sale. A cancel or exchange steps it down when it happened.'
-        : null
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <figure className="m-0">
@@ -269,7 +257,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
           </ul>
         ) : (
           <p className="text-xs font-bold text-muted">
-            {series.kind === 'DAY' ? 'Total' : 'So far'}{' '}
+            Total{' '}
             <span className="text-ink tabular">{formatRinggit(totals[series.defs[0]?.key ?? ''] ?? 0)}</span>
           </p>
         )}
@@ -286,7 +274,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
             <thead className="sticky top-0 bg-canvas text-xs uppercase tracking-wider text-muted">
               <tr>
                 <th className="sticky left-0 bg-canvas p-2 text-left font-bold">
-                  {series.kind === 'DAY' ? 'Date' : 'Time'}
+                  {series.kind === 'DAY' ? 'Date' : 'Hour'}
                 </th>
                 {visible.map((def) => (
                   <th key={def.key} className="p-2 text-right font-bold">
@@ -329,7 +317,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
                 textAnchor="end"
                 className="fill-slate-400 text-[11px] font-semibold"
               >
-                {formatRinggitShort(tick)}
+                {tickLabel(tick)}
               </text>
             ))}
           </svg>
@@ -384,6 +372,22 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
                     strokeLinecap="round"
                   />
                 ))}
+
+                {series.kind === 'TIME'
+                  ? visible.map((def) =>
+                      series.points.map((point, index) => (
+                        <circle
+                          key={`${def.key}-${point.at}`}
+                          cx={xAt(index)}
+                          cy={yAt(point.values[def.key] ?? 0)}
+                          r={3}
+                          fill={def.colour}
+                          stroke={SURFACE}
+                          strokeWidth={1.5}
+                        />
+                      )),
+                    )
+                  : null}
 
                 {xLabels.map((item) => (
                   <text
