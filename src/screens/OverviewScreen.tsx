@@ -14,7 +14,6 @@ import {
   formatDate,
   formatRange,
   inRange,
-  monthOf,
   summariseRange,
   type DateRange,
 } from '../domain/selectors.ts'
@@ -26,8 +25,9 @@ export function OverviewScreen({
   store: VistaStore
   onNavigate: (key: ScreenKey) => void
 }) {
+  // Opens on today; ‹ › step a day at a time.
   const [range, setRange] = useState<DateRange>(() => ({
-    startDate: `${monthOf(store.today)}-01`,
+    startDate: store.today,
     endDate: store.today,
   }))
 
@@ -56,12 +56,14 @@ export function OverviewScreen({
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-line pb-5">
         <div>
           <p className="page-kicker">Owner ledger / {formatRange(range)}</p>
-          <h1 className="mt-1 text-3xl sm:text-[2.65rem]">The period, at a glance</h1>
+          <h1 className="mt-1 text-3xl sm:text-[2.65rem]">
+            {range.startDate === range.endDate ? 'The day' : 'The period'}, at a glance
+          </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
             Sales, cash position, and the few things worth your eye.
           </p>
         </div>
-        <DateRangePicker value={range} onChange={setRange} today={store.today} />
+        <DateRangePicker value={range} onChange={setRange} today={store.today} stepper />
       </div>
 
       {attention.length > 0 ? (
