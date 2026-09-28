@@ -47,7 +47,26 @@ export function rangePresets(today: string): Array<{ label: string; range: DateR
   ]
 }
 
+/** Whole days from `startDate` to `endDate`, counting both ends. */
+export function rangeLength({ startDate, endDate }: DateRange): number {
+  const ms = Date.parse(`${endDate}T12:00:00Z`) - Date.parse(`${startDate}T12:00:00Z`)
+  return Math.round(ms / 86_400_000) + 1
+}
+
+/**
+ * The same-length window just before or after `range` — one day back from a
+ * day, the previous 30 days from a 30-day window. Never runs past `today`.
+ */
+export function shiftRange(range: DateRange, direction: -1 | 1, today: string): DateRange {
+  const step = rangeLength(range) * direction
+  const startDate = addDays(range.startDate, step)
+  const endDate = addDays(range.endDate, step)
+  if (endDate <= today) return { startDate, endDate }
+  return { startDate: startDate > today ? today : startDate, endDate: today }
+}
+
 export function formatRange({ startDate, endDate }: DateRange): string {
+  if (startDate === endDate) return formatDate(startDate)
   return `${formatDate(startDate)} — ${formatDate(endDate)}`
 }
 

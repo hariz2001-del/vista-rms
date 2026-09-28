@@ -1,5 +1,12 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useMemo } from 'react'
-import { formatRange, rangePresets, type DateRange } from '../domain/selectors.ts'
+import {
+  formatRange,
+  rangeLength,
+  rangePresets,
+  shiftRange,
+  type DateRange,
+} from '../domain/selectors.ts'
 
 type Props = {
   value: DateRange
@@ -7,6 +14,8 @@ type Props = {
   today: string
   /** Shown under the heading, e.g. "Sat, 1 Aug — Mon, 31 Aug". */
   showSummary?: boolean
+  /** A "Today" preset and ‹ › buttons that step the window back and forward. */
+  stepper?: boolean
 }
 
 /**
@@ -25,14 +34,55 @@ function openCalendar(event: { currentTarget: HTMLInputElement }) {
   }
 }
 
-export function DateRangePicker({ value, onChange, today, showSummary = false }: Props) {
-  const presets = useMemo(() => rangePresets(today), [today])
+export function DateRangePicker({
+  value,
+  onChange,
+  today,
+  showSummary = false,
+  stepper = false,
+}: Props) {
+  const presets = useMemo(
+    () => [
+      ...(stepper ? [{ label: 'Today', range: { startDate: today, endDate: today } }] : []),
+      ...rangePresets(today),
+    ],
+    [today, stepper],
+  )
+  const unit = rangeLength(value) === 1 ? 'day' : `${rangeLength(value)} days`
+  const atToday = value.endDate >= today
 
   return (
     <div className="flex flex-col items-start gap-2">
       {showSummary ? <p className="text-sm text-muted">{formatRange(value)}</p> : null}
 
       <div className="flex flex-wrap items-end gap-2">
+        {stepper ? (
+          <div className="flex items-stretch border border-line bg-surface" role="group" aria-label="Step through dates">
+            <button
+              type="button"
+              onClick={() => onChange(shiftRange(value, -1, today))}
+              aria-label={`Previous ${unit}`}
+              title={`Previous ${unit}`}
+              className="grid min-h-11 w-11 place-items-center text-ink hover:bg-canvas"
+            >
+              <ChevronLeft aria-hidden="true" className="size-5" />
+            </button>
+            <span className="flex min-w-32 items-center justify-center border-x border-line px-3 text-sm font-bold text-ink tabular">
+              {value.startDate === today && value.endDate === today ? 'Today' : formatRange(value)}
+            </span>
+            <button
+              type="button"
+              onClick={() => onChange(shiftRange(value, 1, today))}
+              disabled={atToday}
+              aria-label={`Next ${unit}`}
+              title={atToday ? 'Nothing after today' : `Next ${unit}`}
+              className="grid min-h-11 w-11 place-items-center text-ink hover:bg-canvas disabled:text-slate-300 disabled:hover:bg-transparent"
+            >
+              <ChevronRight aria-hidden="true" className="size-5" />
+            </button>
+          </div>
+        ) : null}
+
         {presets.map((preset) => {
           const isActive =
             preset.range.startDate === value.startDate && preset.range.endDate === value.endDate

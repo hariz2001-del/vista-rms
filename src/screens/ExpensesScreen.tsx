@@ -1,4 +1,4 @@
-import { Camera, Check, HandCoins, Plus } from 'lucide-react'
+import { Check, ClipboardCopy, ClipboardPaste, HandCoins, Plus, X } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
@@ -7,6 +7,7 @@ import { splitShared } from '../domain/finance.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import { formatDate, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
 import type { ExpenseCategory, PaymentSource } from '../domain/types.ts'
+import { parsePastedExpenses, receiptPrompt, type PastedExpense } from '../domain/receipt-paste.ts'
 
 const CATEGORIES: Array<{ value: ExpenseCategory; label: string }> = [
   { value: 'RAW_MATERIALS', label: 'Stock' },
@@ -21,6 +22,8 @@ const CATEGORIES: Array<{ value: ExpenseCategory; label: string }> = [
 const CATEGORY_LABEL = Object.fromEntries(
   CATEGORIES.map((category) => [category.value, category.label]),
 ) as Record<ExpenseCategory, string>
+
+const PASTE_PLACEHOLDER = '=== VISTA EXPENSE ===\nDATE: 2026-09-27\nAMOUNT: 45.80\n…'
 
 const PAID_BY: Array<{ value: PaymentSource; label: string }> = [
   { value: 'STALL_FUNDS', label: 'Stall funds' },
@@ -65,6 +68,58 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
   const [target, setTarget] = useState<'FOOD' | 'DRINKS' | 'SHARED'>('SHARED')
   const [foodPct, setFoodPct] = useState(store.settings.sharedOverheadFoodPct)
   const [saved, setSaved] = useState(false)
+  const [businessDate, setBusinessDate] = useState(store.today)
+
+  // Receipts read by Gemini, pasted back. The first fills the form; the rest
+  // wait their turn and load one by one as each is logged.
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasted, setPasted] = useState('')
+  const [queue, setQueue] = useState<PastedExpense[]>([])
+  const [queueTotal, setQueueTotal] = useState(0)
+  const [filledFrom, setFilledFrom] = useState<PastedExpense | null>(null)
+  const [copied, setCopied] = useState(false)
+  const prompt = receiptPrompt({
+    foodName: foodBrand?.name ?? 'Food',
+    drinksName: drinksBrand?.name ?? 'Drinks',
+    withBrands: withSettlement,
+  })
+
+  function fillFrom(entry: PastedExpense) {
+    setAmount(entry.amountSen === undefined ? '' : (entry.amountSen / 100).toFixed(2))
+    setDescription(entry.description ?? '')
+    // A future date is a misread; the API would take it, so the form refuses it.
+    setBusinessDate(
+      entry.businessDate && entry.businessDate <= store.today ? entry.businessDate : store.today,
+    )
+    if (entry.category) setCategory(entry.category)
+    if (entry.chargeTo) setTarget(entry.chargeTo)
+    if (entry.foodSplitPct !== undefined) setFoodPct(entry.foodSplitPct)
+    setFilledFrom(entry)
+  }
+
+  function readPasted(text: string) {
+    setPasted(text)
+    const entries = parsePastedExpenses(text, {
+      food: foodBrand?.name ?? 'Food',
+      drinks: drinksBrand?.name ?? 'Drinks',
+    })
+    const [first, ...rest] = entries
+    setQueueTotal(entries.length)
+    setQueue(rest)
+    if (first) fillFrom(first)
+    else setFilledFrom(null)
+  }
+
+  async function copyPrompt() {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard blocked: "See the prompt" shows it for copying by hand.
+      setCopied(false)
+    }
+  }
 
   const [range, setRange] = useState<DateRange>(() => ({
     startDate: `${monthOf(store.today)}-01`,
@@ -81,7 +136,7 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
 
     if (!withSettlement || !foodBrand || !drinksBrand) {
       store.addExpense({
-        businessDate: store.today,
+        businessDate,
         amountSen,
         category,
         paidBy: 'STALL_FUNDS',
@@ -91,7 +146,7 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
       })
     } else {
       store.addExpense({
-        businessDate: store.today,
+        businessDate,
         amountSen,
         category,
         paidBy,
@@ -103,6 +158,18 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
 
     setAmount('')
     setDescription('')
+    const [next, ...rest] = queue
+    if (next) {
+      fillFrom(next)
+      setQueue(rest)
+    } else {
+      setFilledFrom(null)
+      setBusinessDate(store.today)
+      if (queueTotal > 0) {
+        setPasted('')
+        setQueueTotal(0)
+      }
+    }
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2200)
   }
@@ -133,6 +200,103 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
         <Panel>
           <SectionHeading title="Log an expense" hint="Amount and what it was. Everything else has a sensible default." />
           <form onSubmit={handleSubmit} className="space-y-4">
+            {pasteOpen ? (
+              <div className="space-y-3 border border-rail/40 bg-canvas p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-black text-ink">Fill from a receipt</p>
+                  <button
+                    type="button"
+                    onClick={() => setPasteOpen(false)}
+                    aria-label="Close receipt paste"
+                    className="grid size-8 place-items-center text-muted hover:bg-surface"
+                  >
+                    <X aria-hidden="true" className="size-4" />
+                  </button>
+                </div>
+                <ol className="list-decimal space-y-1 pl-4 text-xs text-muted">
+                  <li>Copy the prompt and paste it into Gemini.</li>
+                  <li>Attach the receipt photo — several at once is fine — and send.</li>
+                  <li>Copy Gemini&rsquo;s whole reply and paste it below. The form fills itself.</li>
+                </ol>
+                <button
+                  type="button"
+                  onClick={() => void copyPrompt()}
+                  className="flex min-h-10 w-full items-center justify-center gap-2 border border-line bg-surface text-sm font-bold text-ink hover:bg-white"
+                >
+                  {copied ? (
+                    <>
+                      <Check aria-hidden="true" className="size-4" /> Prompt copied
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardCopy aria-hidden="true" className="size-4" /> Copy the prompt
+                    </>
+                  )}
+                </button>
+                <details className="text-xs text-muted">
+                  <summary className="cursor-pointer font-bold">See the prompt</summary>
+                  <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap border border-line bg-surface p-2 text-[0.7rem] leading-relaxed">
+                    {prompt}
+                  </pre>
+                </details>
+                <label className="block">
+                  <span className="vista-field-label">Gemini&rsquo;s reply</span>
+                  <textarea
+                    value={pasted}
+                    onChange={(event) => readPasted(event.target.value)}
+                    rows={5}
+                    placeholder={PASTE_PLACEHOLDER}
+                    className="mt-1 w-full border-2 border-line bg-surface p-2 font-mono text-xs outline-none focus:border-rail"
+                  />
+                </label>
+                {pasted.trim() !== '' && queueTotal === 0 ? (
+                  <p role="alert" className="text-xs font-bold text-serious">
+                    No receipt found in that text. Paste Gemini&rsquo;s whole reply, including the
+                    === VISTA EXPENSE === lines.
+                  </p>
+                ) : null}
+                {filledFrom ? (
+                  <div role="status" className="space-y-1 text-xs">
+                    <p className="font-bold text-good">
+                      {queueTotal > 1
+                        ? `Receipt ${queueTotal - queue.length} of ${queueTotal} filled in. Check it and log it; the next one loads after.`
+                        : 'Filled in. Check the form below, then log it.'}
+                    </p>
+                    {filledFrom.amountSen === undefined ? (
+                      <p className="font-bold text-serious">No amount was read — type it in.</p>
+                    ) : null}
+                    {filledFrom.problems.map((problem) => (
+                      <p key={problem} className="text-serious">
+                        {problem}.
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPasteOpen(true)}
+                className="flex min-h-12 w-full items-center justify-center gap-2 border border-dashed border-slate-400 text-sm font-bold text-ink hover:bg-canvas"
+              >
+                <ClipboardPaste aria-hidden="true" className="size-4" /> Fill from a receipt (Gemini)
+              </button>
+            )}
+
+            <div>
+              <label className="vista-field-label" htmlFor="expense-date">
+                Date
+              </label>
+              <input
+                id="expense-date"
+                type="date"
+                value={businessDate}
+                max={store.today}
+                onChange={(event) => setBusinessDate(event.target.value || store.today)}
+                className="mt-1 min-h-12 w-full border-2 border-line bg-surface px-3 font-semibold outline-none focus:border-rail"
+              />
+            </div>
+
             <div>
               <label className="vista-field-label" htmlFor="amount">
                 Amount
@@ -254,14 +418,6 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
                 ) : null}
               </>
             ) : null}
-
-            <button
-              type="button"
-              className="flex min-h-12 w-full items-center justify-center gap-2 border border-dashed border-slate-400 text-sm font-bold text-muted hover:bg-canvas"
-              title="Receipt scanning is not built yet"
-            >
-              <Camera aria-hidden="true" className="size-4" /> Snap a receipt (coming later)
-            </button>
 
             <button
               type="submit"
