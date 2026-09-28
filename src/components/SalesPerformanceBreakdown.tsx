@@ -445,7 +445,6 @@ export function SalesPerformanceBreakdown({
                 {group.modifiers.map((row) => (
                   <tr key={row.key} className="border-t border-slate-100 hover:bg-canvas/60">
                     <td className="sticky left-0 z-[1] bg-surface py-2.5 pl-6 pr-3 font-bold text-ink">
-                      {row.type === 'REMOVAL' ? '− ' : ''}
                       {row.name}
                     </td>
                     <td className="px-3 py-2.5 text-xs font-bold">{brandTag(row.brandId)}</td>
@@ -589,7 +588,6 @@ function ProductAddOns({ product }: { product: ProductSales }) {
                 <li key={row.key} className="text-xs">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-ink">
-                      {row.type === 'REMOVAL' ? '− ' : ''}
                       {row.name}
                     </span>
                     <span className="flex items-center gap-2 font-mono tabular">

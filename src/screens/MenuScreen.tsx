@@ -816,7 +816,8 @@ function GroupEditor({ group, edit }: { group: ModifierGroup; edit: Edit }) {
       groupId: group.id,
       name: optionName.trim(),
       priceSen: optionPriceSen,
-      type: optionPriceSen > 0 ? 'ADD_ON' : 'REMOVAL',
+      // Not guessed from the price: "Blue" is free but no removal.
+      type: 'ADD_ON',
     })
     if (saved) {
       setOptionName('')
