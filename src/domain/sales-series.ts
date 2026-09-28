@@ -5,9 +5,9 @@ import { inRange, type DateRange } from './selectors.ts'
 /**
  * The lines on the Overview sales chart.
  *
- * A range of days plots net sales per day. A single day plots a running total
- * through the day, sale by sale, so the shape of the shift is visible — slow
- * start, the rush, the tail. Integer sen throughout.
+ * A range of days plots net sales per day. A single day plots net sales per
+ * hour — each hour on its own, never carried into the next — so the rush and
+ * the quiet stretches of the shift stand out. Integer sen throughout.
  *
  * Overall and by-brand figures are the books' figures: sales plus every cancel
  * and exchange, as "Net sales" above the chart counts them. By-category figures
@@ -33,6 +33,7 @@ export type SalesSeries = {
 
 export const OVERALL_KEY = 'overall'
 export const OTHER_KEY = 'other'
+export const HOUR_MS = 3_600_000
 
 /** The validated categorical order (light surface #fffdf8), assigned by menu position. */
 export const CATEGORY_COLOURS = [
@@ -165,34 +166,44 @@ export function salesSeries(
     }
   }
 
-  // ---- One day: a running total at each sale and each correction ----
-  type Event = { at: string; amounts: Array<[string | null, number]> }
+  // ---- One day: net sales inside each hour, from the first sale's hour to the last's ----
+  type Event = { ms: number; amounts: Array<[string | null, number]> }
   const events: Event[] = [
     ...periodOrders.map((order) => ({
-      at: order.completedAt,
+      ms: Date.parse(order.completedAt),
       amounts: order.lines.map((line): [string | null, number] => [keyFor(line), lineNetSen(line)]),
     })),
+    // A cancel or exchange counts against the hour it was made in, so an hour
+    // with more refunded than sold goes below zero.
     ...periodCorrections.map((correction) => ({
-      at: correction.createdAt,
+      ms: Date.parse(correction.createdAt),
       amounts: correctionAmounts(mode, correction),
     })),
-  ].toSorted((a, b) => a.at.localeCompare(b.at))
+  ]
+  if (events.length === 0) return { kind: 'TIME', defs, points: [] }
 
-  const running = emptyValues(defs)
-  const points: SeriesPoint[] = []
-  const first = events[0]
-  // Every line starts from zero at the first sale, so the climb is drawn.
-  if (first) points.push({ at: first.at, values: { ...running } })
+  // Malaysia is a whole number of hours from UTC, so a UTC hour is a local hour.
+  const hourOf = (ms: number) => Math.floor(ms / HOUR_MS) * HOUR_MS
+  const firstHour = Math.min(...events.map((event) => hourOf(event.ms)))
+  const lastHour = Math.max(...events.map((event) => hourOf(event.ms)))
+  const buckets = new Map<number, Record<string, number>>()
+  // Every hour of the shift gets a point, quiet hours included as zero; a
+  // cross-midnight shift simply runs on past 12am under the same business date.
+  for (let hour = firstHour; hour <= lastHour; hour += HOUR_MS) buckets.set(hour, emptyValues(defs))
   for (const event of events) {
-    for (const [key, sen] of event.amounts) add(running, key, sen)
-    points.push({ at: event.at, values: { ...running } })
+    const values = buckets.get(hourOf(event.ms))
+    if (!values) continue
+    for (const [key, sen] of event.amounts) add(values, key, sen)
   }
-  return { kind: 'TIME', defs, points }
+  return {
+    kind: 'TIME',
+    defs,
+    points: [...buckets.entries()].map(([hour, values]) => ({ at: new Date(hour).toISOString(), values })),
+  }
 }
 
-/** Each line's figure for the whole period: the day totals summed, or the day's final running total. */
+/** Each line's figure for the whole period: its days, or its hours, summed. */
 export function seriesTotals(series: SalesSeries): Record<string, number> {
-  if (series.kind === 'TIME') return { ...(series.points.at(-1)?.values ?? emptyValues(series.defs)) }
   const totals = emptyValues(series.defs)
   for (const point of series.points) {
     for (const def of series.defs) totals[def.key] = (totals[def.key] ?? 0) + (point.values[def.key] ?? 0)

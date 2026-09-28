@@ -105,23 +105,48 @@ describe('salesSeries by day', () => {
   })
 })
 
-describe('salesSeries through a single day', () => {
+describe('salesSeries through a single day, by hour', () => {
   const today = { startDate: '2026-09-28', endDate: '2026-09-28' }
 
-  it('is a running total at each sale, starting from zero', () => {
-    const series = salesSeries(ORDERS, [], today, 'OVERALL', BRANDS, CATEGORIES)
+  it('puts each sale in its own hour, with no carry-over into the next', () => {
+    // 12:05Z and 12:40Z are both in the 8pm hour in Kuala Lumpur.
+    const late = order('4', '2026-09-28', '2026-09-28T14:15:00Z', [line('drinks', 'cold', 450)])
+    const series = salesSeries([...ORDERS, late], [], today, 'OVERALL', BRANDS, CATEGORIES)
     expect(series.kind).toBe('TIME')
     expect(series.points.map((p) => [p.at, p.values[OVERALL_KEY]])).toEqual([
-      ['2026-09-28T12:05:00Z', 0],
-      ['2026-09-28T12:05:00Z', 900],
-      ['2026-09-28T12:40:00Z', 2_600],
+      ['2026-09-28T12:00:00.000Z', 2_600],
+      // A quiet hour is a zero, not a gap and not the previous hour's figure.
+      ['2026-09-28T13:00:00.000Z', 0],
+      ['2026-09-28T14:00:00.000Z', 450],
     ])
+    expect(seriesTotals(series)).toEqual({ [OVERALL_KEY]: 3_050 })
   })
 
-  it('steps down at a cancel, at the time it was made', () => {
+  it('splits each hour by brand, and the hours add up to the day', () => {
+    const series = salesSeries(ORDERS, [], today, 'BRAND', BRANDS, CATEGORIES)
+    expect(series.points).toEqual([
+      { at: '2026-09-28T12:00:00.000Z', values: { food: 1_900, drinks: 700 } },
+    ])
+    expect(seriesTotals(series)).toEqual({ food: 1_900, drinks: 700 })
+  })
+
+  it('takes a cancel off the hour it was made in, below zero if that hour sold less', () => {
     const series = salesSeries(ORDERS, [CANCEL], today, 'BRAND', BRANDS, CATEGORIES)
-    expect(series.points.at(-1)).toEqual({ at: '2026-09-28T13:00:00Z', values: { food: 1_000, drinks: 700 } })
+    expect(series.points).toEqual([
+      { at: '2026-09-28T12:00:00.000Z', values: { food: 1_900, drinks: 700 } },
+      // The cancel at 13:00Z (9pm) refunds 900 in an hour with no sales.
+      { at: '2026-09-28T13:00:00.000Z', values: { food: -900, drinks: 0 } },
+    ])
     expect(seriesTotals(series)).toEqual({ food: 1_000, drinks: 700 })
+  })
+
+  it('runs a cross-midnight shift on past 12am under its business date', () => {
+    const night = [
+      order('5', '2026-09-28', '2026-09-28T15:30:00Z', [line('food', 'rice', 1_000)]), // 11:30pm
+      order('6', '2026-09-28', '2026-09-28T17:10:00Z', [line('food', 'rice', 500)]), // 1:10am
+    ]
+    const series = salesSeries(night, [], today, 'OVERALL', BRANDS, CATEGORIES)
+    expect(series.points.map((p) => p.values[OVERALL_KEY])).toEqual([1_000, 0, 500])
   })
 
   it('is empty on a day with no sales', () => {
