@@ -176,6 +176,23 @@ describe('salesSeries through a single day, by hour', () => {
     expect(series.points.filter((p) => p.isFuture)).toHaveLength(8)
   })
 
+  it('splits the day into half hours on M30, and four-hour blocks on H4', () => {
+    const at = (frame: 240 | 60 | 30) =>
+      salesSeries(ORDERS, [], today, 'OVERALL', BRANDS, CATEGORIES, null, 5, later, frame)
+    const m30 = at(30)
+    expect(m30.points).toHaveLength(48)
+    // 12:05Z (8:05pm) and 12:40Z (8:40pm) now fall in different half hours.
+    expect(overall(m30).slice(30, 32)).toEqual([900, 1_700])
+    expect(m30.points[31]?.at).toBe('2026-09-28T12:30:00.000Z')
+
+    const h4 = at(240)
+    expect(h4.points).toHaveLength(6)
+    // 5am, 9am, 1pm, 5pm, 9pm, 1am — the 8pm sales are in the 5pm–9pm block.
+    expect(overall(h4)).toEqual([0, 0, 0, 2_600, 0, 0])
+    // Whatever the frame, the day adds up to the same.
+    expect(seriesTotals(m30)).toEqual(seriesTotals(h4))
+  })
+
   it('never hides an hour that already has a sale, whatever the clock says', () => {
     // 19:00 in Kuala Lumpur, before the 8pm sales — yet they are recorded.
     const series = hourly(ORDERS, [], 'OVERALL', 5, new Date('2026-09-28T11:00:00Z'))
