@@ -60,7 +60,56 @@ SPLIT: 70/30
       chargeTo: 'SHARED',
       foodSplitPct: 70,
       problems: [],
+      items: [],
     })
+  })
+
+  it('reads the receipt details and its item lines', () => {
+    const [expense] = parsePastedExpenses(
+      `=== VISTA EXPENSE ===
+VENDOR: Pasar Borong Selayang
+RECEIPT NO: INV-20931
+DATE: 2026-09-27
+TIME: 6:45 AM
+AMOUNT: 101.98
+PAYMENT: DuitNow QR
+WHAT: Ayam dan telur
+CATEGORY: STOCK
+ITEM: Ayam bulat | 10 | ekor | 8.50
+ITEM: Telur Gred A | 2 | papan | 8.25 | 16.50
+ITEM: Rounding adjustment | 1 | | -0.02
+=== END ===`,
+    )
+    expect(expense).toMatchObject({
+      vendor: 'Pasar Borong Selayang',
+      receiptNo: 'INV-20931',
+      receiptTime: '06:45',
+      paymentMethod: 'DUITNOW_QR',
+      amountSen: 10_198,
+      problems: [],
+    })
+    expect(expense?.items).toEqual([
+      { name: 'Ayam bulat', quantityMilli: 10_000, unit: 'ekor', unitPriceSen: 850 },
+      { name: 'Telur Gred A', quantityMilli: 2_000, unit: 'papan', unitPriceSen: 825 },
+      { name: 'Rounding adjustment', quantityMilli: 1_000, unit: null, unitPriceSen: -2 },
+    ])
+  })
+
+  it('reads the short item forms and fractional quantities', () => {
+    const [expense] = parsePastedExpenses(
+      'ITEM: Ice block | 12.00\nITEM: Daging | 2.5 | kg | 32.90\nITEM: ??? | lots | kg | 3',
+    )
+    expect(expense?.items).toEqual([
+      { name: 'Ice block', quantityMilli: 1_000, unit: null, unitPriceSen: 1_200 },
+      { name: 'Daging', quantityMilli: 2_500, unit: 'kg', unitPriceSen: 3_290 },
+    ])
+    expect(expense?.problems).toEqual(['Item "??? | lots | kg | 3" is not name | quantity | unit | price'])
+  })
+
+  it('files ice and gas under their own category, not utilities', () => {
+    expect(parsePastedExpenses('AMOUNT: 5\nCATEGORY: ICE_GAS')[0]?.category).toBe('ICE_GAS')
+    expect(parsePastedExpenses('AMOUNT: 5\nCATEGORY: Tong gas')[0]?.category).toBe('ICE_GAS')
+    expect(parsePastedExpenses('AMOUNT: 5\nCATEGORY: TNB bill')[0]?.category).toBe('UTILITIES')
   })
 
   it('survives what a chat app does to the reply', () => {
