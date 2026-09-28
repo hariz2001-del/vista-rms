@@ -23,6 +23,8 @@ export type SeriesPoint = {
   /** A date (`2026-09-28`) for day points; an ISO timestamp for time points. */
   at: string
   values: Record<string, number>
+  /** An hour of today that has not started yet: on the axis, but no figure. */
+  isFuture?: boolean
 }
 
 export type SalesSeries = {
@@ -123,6 +125,9 @@ export function salesSeries(
   brands: readonly Brand[],
   categories: readonly Category[],
   brandId: string | null = null,
+  /** The owner's "day starts at" hour: a business day's 24 hours begin here. */
+  dayRolloverHour = 5,
+  now: Date = new Date(),
 ): SalesSeries {
   const cancelled = new Set(
     corrections.filter((c) => c.kind === 'CANCEL').map((c) => c.originalOrderId),
@@ -166,7 +171,7 @@ export function salesSeries(
     }
   }
 
-  // ---- One day: net sales inside each hour, from the first sale's hour to the last's ----
+  // ---- One day: net sales inside each of its 24 hours ----
   type Event = { ms: number; amounts: Array<[string | null, number]> }
   const events: Event[] = [
     ...periodOrders.map((order) => ({
@@ -180,25 +185,34 @@ export function salesSeries(
       amounts: correctionAmounts(mode, correction),
     })),
   ]
-  if (events.length === 0) return { kind: 'TIME', defs, points: [] }
-
-  // Malaysia is a whole number of hours from UTC, so a UTC hour is a local hour.
-  const hourOf = (ms: number) => Math.floor(ms / HOUR_MS) * HOUR_MS
-  const firstHour = Math.min(...events.map((event) => hourOf(event.ms)))
-  const lastHour = Math.max(...events.map((event) => hourOf(event.ms)))
-  const buckets = new Map<number, Record<string, number>>()
-  // Every hour of the shift gets a point, quiet hours included as zero; a
-  // cross-midnight shift simply runs on past 12am under the same business date.
-  for (let hour = firstHour; hour <= lastHour; hour += HOUR_MS) buckets.set(hour, emptyValues(defs))
+  // The business day runs from the rollover hour on its date to the same hour
+  // the next day, on the Malaysian clock (UTC+8): with a 5am rollover, 5am to
+  // 4:59am. A night shift therefore sits inside one day, past 12am included.
+  const dayStart = Date.parse(`${range.startDate}T00:00:00Z`) + (dayRolloverHour - 8) * HOUR_MS
+  const buckets = Array.from({ length: 24 }, () => emptyValues(defs))
   for (const event of events) {
-    const values = buckets.get(hourOf(event.ms))
+    // A sale filed under this date but outside its window (the rollover was
+    // changed since) goes to the nearest end rather than being lost.
+    const index = Math.min(23, Math.max(0, Math.floor((event.ms - dayStart) / HOUR_MS)))
+    const values = buckets[index]
     if (!values) continue
     for (const [key, sen] of event.amounts) add(values, key, sen)
   }
+  if (events.length === 0 && dayStart + 24 * HOUR_MS <= now.getTime()) {
+    return { kind: 'TIME', defs, points: [] }
+  }
+  // Still to come: after the clock AND after the last recorded sale, so a sale
+  // is never hidden by a device clock that runs slow.
+  const lastEvent = Math.max(-Infinity, ...events.map((event) => event.ms))
   return {
     kind: 'TIME',
     defs,
-    points: [...buckets.entries()].map(([hour, values]) => ({ at: new Date(hour).toISOString(), values })),
+    points: buckets.map((values, index) => {
+      const start = dayStart + index * HOUR_MS
+      return start > now.getTime() && start > lastEvent
+        ? { at: new Date(start).toISOString(), values, isFuture: true }
+        : { at: new Date(start).toISOString(), values }
+    }),
   }
 }
 

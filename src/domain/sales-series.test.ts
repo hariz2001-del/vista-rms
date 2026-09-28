@@ -107,50 +107,89 @@ describe('salesSeries by day', () => {
 
 describe('salesSeries through a single day, by hour', () => {
   const today = { startDate: '2026-09-28', endDate: '2026-09-28' }
+  // Well after the business day, so no hour is in the future.
+  const later = new Date('2026-10-05T00:00:00Z')
+  const hourly = (
+    orders: Order[],
+    corrections: SaleCorrection[],
+    mode: 'OVERALL' | 'BRAND',
+    rollover = 5,
+    now = later,
+  ) => salesSeries(orders, corrections, today, mode, BRANDS, CATEGORIES, null, rollover, now)
+  const overall = (series: ReturnType<typeof hourly>) => series.points.map((p) => p.values[OVERALL_KEY])
+
+  it('always has the 24 hours of the business day, starting at the rollover hour', () => {
+    const series = hourly(ORDERS, [], 'OVERALL')
+    expect(series.kind).toBe('TIME')
+    expect(series.points).toHaveLength(24)
+    // 5am on the 28th in Kuala Lumpur is 21:00Z on the 27th; the last hour is 4am.
+    expect(series.points[0]?.at).toBe('2026-09-27T21:00:00.000Z')
+    expect(series.points[23]?.at).toBe('2026-09-28T20:00:00.000Z')
+  })
 
   it('puts each sale in its own hour, with no carry-over into the next', () => {
-    // 12:05Z and 12:40Z are both in the 8pm hour in Kuala Lumpur.
     const late = order('4', '2026-09-28', '2026-09-28T14:15:00Z', [line('drinks', 'cold', 450)])
-    const series = salesSeries([...ORDERS, late], [], today, 'OVERALL', BRANDS, CATEGORIES)
-    expect(series.kind).toBe('TIME')
-    expect(series.points.map((p) => [p.at, p.values[OVERALL_KEY]])).toEqual([
-      ['2026-09-28T12:00:00.000Z', 2_600],
-      // A quiet hour is a zero, not a gap and not the previous hour's figure.
-      ['2026-09-28T13:00:00.000Z', 0],
-      ['2026-09-28T14:00:00.000Z', 450],
-    ])
-    expect(seriesTotals(series)).toEqual({ [OVERALL_KEY]: 3_050 })
+    const values = overall(hourly([...ORDERS, late], [], 'OVERALL'))
+    // 12:05Z and 12:40Z are both in the 8pm hour (index 15 from 5am); 14:15Z is 10pm.
+    expect(values[15]).toBe(2_600)
+    expect(values[16]).toBe(0)
+    expect(values[17]).toBe(450)
+    expect(values.reduce((sum, v) => sum + (v ?? 0), 0)).toBe(3_050)
+    expect(seriesTotals(hourly([...ORDERS, late], [], 'OVERALL'))).toEqual({ [OVERALL_KEY]: 3_050 })
+  })
+
+  it('moves with the rollover hour', () => {
+    // A 6pm rollover: the day starts at 18:00 in Kuala Lumpur, 10:00Z.
+    const series = hourly(ORDERS, [], 'OVERALL', 18)
+    expect(series.points[0]?.at).toBe('2026-09-28T10:00:00.000Z')
+    // 8pm is now the third hour.
+    expect(overall(series)[2]).toBe(2_600)
   })
 
   it('splits each hour by brand, and the hours add up to the day', () => {
-    const series = salesSeries(ORDERS, [], today, 'BRAND', BRANDS, CATEGORIES)
-    expect(series.points).toEqual([
-      { at: '2026-09-28T12:00:00.000Z', values: { food: 1_900, drinks: 700 } },
-    ])
+    const series = hourly(ORDERS, [], 'BRAND')
+    expect(series.points[15]?.values).toEqual({ food: 1_900, drinks: 700 })
     expect(seriesTotals(series)).toEqual({ food: 1_900, drinks: 700 })
   })
 
   it('takes a cancel off the hour it was made in, below zero if that hour sold less', () => {
-    const series = salesSeries(ORDERS, [CANCEL], today, 'BRAND', BRANDS, CATEGORIES)
-    expect(series.points).toEqual([
-      { at: '2026-09-28T12:00:00.000Z', values: { food: 1_900, drinks: 700 } },
-      // The cancel at 13:00Z (9pm) refunds 900 in an hour with no sales.
-      { at: '2026-09-28T13:00:00.000Z', values: { food: -900, drinks: 0 } },
-    ])
+    const series = hourly(ORDERS, [CANCEL], 'BRAND')
+    // The cancel at 13:00Z (9pm) refunds 900 in an hour with no sales.
+    expect(series.points[16]?.values).toEqual({ food: -900, drinks: 0 })
     expect(seriesTotals(series)).toEqual({ food: 1_000, drinks: 700 })
   })
 
-  it('runs a cross-midnight shift on past 12am under its business date', () => {
+  it('keeps a cross-midnight shift inside its business day', () => {
     const night = [
       order('5', '2026-09-28', '2026-09-28T15:30:00Z', [line('food', 'rice', 1_000)]), // 11:30pm
       order('6', '2026-09-28', '2026-09-28T17:10:00Z', [line('food', 'rice', 500)]), // 1:10am
     ]
-    const series = salesSeries(night, [], today, 'OVERALL', BRANDS, CATEGORIES)
-    expect(series.points.map((p) => p.values[OVERALL_KEY])).toEqual([1_000, 0, 500])
+    const values = overall(hourly(night, [], 'OVERALL'))
+    expect(values.slice(18, 21)).toEqual([1_000, 0, 500])
   })
 
-  it('is empty on a day with no sales', () => {
-    const series = salesSeries(ORDERS, [], { startDate: '2026-09-27', endDate: '2026-09-27' }, 'OVERALL', BRANDS, CATEGORIES)
+  it('marks the hours of today that have not started', () => {
+    // 20:30 in Kuala Lumpur: the 8pm hour has started, 9pm has not.
+    const series = hourly(ORDERS, [], 'OVERALL', 5, new Date('2026-09-28T12:30:00Z'))
+    expect(series.points[15]?.isFuture).toBeUndefined()
+    expect(series.points[16]?.isFuture).toBe(true)
+    expect(series.points.filter((p) => p.isFuture)).toHaveLength(8)
+  })
+
+  it('never hides an hour that already has a sale, whatever the clock says', () => {
+    // 19:00 in Kuala Lumpur, before the 8pm sales — yet they are recorded.
+    const series = hourly(ORDERS, [], 'OVERALL', 5, new Date('2026-09-28T11:00:00Z'))
+    expect(series.points[15]?.isFuture).toBeUndefined()
+    expect(series.points[16]?.isFuture).toBe(true)
+  })
+
+  it('files a sale outside the window (rollover changed since) under the nearest hour', () => {
+    const early = order('7', '2026-09-28', '2026-09-27T20:00:00Z', [line('food', 'rice', 300)]) // 4am, before a 5am start
+    expect(overall(hourly([early], [], 'OVERALL'))[0]).toBe(300)
+  })
+
+  it('is empty for a past day with no sales', () => {
+    const series = salesSeries(ORDERS, [], { startDate: '2026-09-27', endDate: '2026-09-27' }, 'OVERALL', BRANDS, CATEGORIES, null, 5, later)
     expect(series.points).toEqual([])
     expect(seriesTotals(series)).toEqual({ [OVERALL_KEY]: 0 })
   })

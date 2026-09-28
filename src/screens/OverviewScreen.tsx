@@ -146,6 +146,7 @@ export function OverviewScreen({
             corrections={store.corrections}
             brands={store.brands}
             categories={store.categories}
+            dayRolloverHour={store.settings.dayRolloverHour ?? 5}
           />
         </Panel>
 
