@@ -155,8 +155,6 @@ export function SalesPerformanceBreakdown({
     })
   }
 
-  const countLabel = dimension === 'modifier' ? 'Times chosen' : 'Qty sold'
-  const netLabel = dimension === 'modifier' ? 'Add-on revenue' : 'Net sales'
   const differenceSen = periodNetSalesSen - breakdown.netSen
   const rowCount =
     dimension === 'product'
@@ -191,12 +189,13 @@ export function SalesPerformanceBreakdown({
     </th>
   )
 
-  const plainHeader = (label: string, align: 'left' | 'right' = 'left') => (
+  // The name column stays put while a table scrolls sideways.
+  const plainHeader = (label: string, align: 'left' | 'right' = 'left', sticky = false) => (
     <th
       scope="col"
       className={`px-3 py-2 font-mono text-[0.65rem] font-bold uppercase tracking-[0.08em] text-muted ${
         align === 'right' ? 'text-right' : 'text-left'
-      }`}
+      } ${sticky ? 'sticky left-0 z-[1] bg-surface' : ''}`}
     >
       {label}
     </th>
@@ -252,24 +251,6 @@ export function SalesPerformanceBreakdown({
           />
         </label>
 
-        {/* Phones have no column headers to tap, so sorting gets its own control. */}
-        <label className="flex min-h-9 items-center gap-2 text-xs font-bold text-muted md:hidden">
-          Sort
-          <select
-            value={`${sortKey}:${direction}`}
-            onChange={(event) => {
-              const [key, dir] = event.target.value.split(':') as [SortKey, SortDirection]
-              setSortKey(key)
-              setDirection(dir)
-            }}
-            className="min-h-9 border border-line bg-surface px-2 text-ink"
-          >
-            <option value="quantity:desc">{countLabel}, most first</option>
-            <option value="quantity:asc">{countLabel}, least first</option>
-            <option value="net:desc">{netLabel}, highest first</option>
-            <option value="net:asc">{netLabel}, lowest first</option>
-          </select>
-        </label>
       </div>
 
       {rowCount === 0 ? (
@@ -284,10 +265,11 @@ export function SalesPerformanceBreakdown({
       {/* By product */}
       {dimension === 'product' && rowCount > 0 ? (
         <>
-          <table className="mt-2 hidden w-full text-sm md:table">
+          <div className="scrollbar-subtle mt-2 overflow-x-auto">
+          <table className="w-full min-w-[46rem] text-sm [&_td:not(:first-child)]:whitespace-nowrap">
             <thead className="border-b border-line">
               <tr>
-                {plainHeader('Product')}
+                {plainHeader('Product', 'left', true)}
                 {plainHeader('Brand')}
                 {sortHeader('quantity', 'Qty sold')}
                 {plainHeader('Base', 'right')}
@@ -302,7 +284,7 @@ export function SalesPerformanceBreakdown({
                 return (
                   <Fragment key={row.key}>
                     <tr className="border-t border-slate-100 hover:bg-canvas/60">
-                      <td className="px-1 py-1.5 font-bold">
+                      <td className="sticky left-0 z-[1] bg-surface px-1 py-1.5 font-bold">
                         <ExpandButton isOpen={isOpen} onClick={() => toggle(row.key)} label={`${row.name} add-ons`}>
                           <span className="text-ink">{row.name}</span>
                           <span className="block text-xs font-normal text-muted">
@@ -342,49 +324,15 @@ export function SalesPerformanceBreakdown({
               })}
             </tbody>
           </table>
+          </div>
 
-          <ul className="mt-2 divide-y divide-slate-100 md:hidden">
-            {productRows.map((row) => {
-              const isOpen = expanded.has(row.key)
-              return (
-                <li key={row.key} className="py-2">
-                  <ExpandButton isOpen={isOpen} onClick={() => toggle(row.key)} label={`${row.name} add-ons`}>
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="min-w-0">
-                        <span className="block font-bold text-ink">{row.name}</span>
-                        <span className="block text-xs font-normal text-muted">
-                          {categoryNames.get(row.categoryId) ?? 'Uncategorised'} · {brandTag(row.brandId)}
-                        </span>
-                      </span>
-                      <span className="text-right font-mono">
-                        <Money sen={row.netSen} className="font-bold" />
-                        <span className="block text-xs font-normal text-muted">×{row.quantity}</span>
-                      </span>
-                    </span>
-                    <span className="mt-1.5 flex flex-wrap gap-x-3 font-mono text-[0.7rem] font-normal text-muted">
-                      <span>Base {formatRinggit(row.baseSen)}</span>
-                      <span>Add-ons {formatRinggit(row.modifierSen)}</span>
-                      {row.discountSen > 0 ? <span>Disc −{formatRinggit(row.discountSen)}</span> : null}
-                      <span className="ml-auto font-bold text-ink">
-                        {formatShare(shareOfBrand(row.netSen, brandNet(row.brandId)))} of brand
-                      </span>
-                    </span>
-                  </ExpandButton>
-                  {isOpen ? (
-                    <div className="mt-2 pl-6">
-                      <ProductAddOns product={row} />
-                    </div>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
         </>
       ) : null}
 
       {/* By category */}
       {dimension === 'category' && rowCount > 0 ? (
-        <table className="mt-2 w-full text-sm">
+        <div className="scrollbar-subtle mt-2 overflow-x-auto">
+        <table className="w-full min-w-[30rem] text-sm [&_td:not(:first-child)]:whitespace-nowrap">
           <thead className="border-b border-line">
             <tr>
               {plainHeader('Category')}
@@ -464,15 +412,17 @@ export function SalesPerformanceBreakdown({
             })}
           </tbody>
         </table>
+        </div>
       ) : null}
 
       {/* By add-on, sectioned by option group */}
       {dimension === 'modifier' && rowCount > 0 ? (
         <>
-          <table className="mt-2 hidden w-full text-sm md:table">
+          <div className="scrollbar-subtle mt-2 overflow-x-auto">
+          <table className="w-full min-w-[46rem] text-sm [&_td:not(:first-child)]:whitespace-nowrap">
             <thead className="border-b border-line">
               <tr>
-                {plainHeader('Add-on')}
+                {plainHeader('Add-on', 'left', true)}
                 {plainHeader('Brand')}
                 {plainHeader('Chosen on')}
                 {sortHeader('quantity', 'Times chosen')}
@@ -494,7 +444,7 @@ export function SalesPerformanceBreakdown({
                 </tr>
                 {group.modifiers.map((row) => (
                   <tr key={row.key} className="border-t border-slate-100 hover:bg-canvas/60">
-                    <td className="py-2.5 pl-6 pr-3 font-bold text-ink">
+                    <td className="sticky left-0 z-[1] bg-surface py-2.5 pl-6 pr-3 font-bold text-ink">
                       {row.type === 'REMOVAL' ? '− ' : ''}
                       {row.name}
                     </td>
@@ -519,44 +469,8 @@ export function SalesPerformanceBreakdown({
               </tbody>
             ))}
           </table>
-
-          <div className="mt-2 space-y-4 md:hidden">
-            {modifierGroups.map((group) => (
-              <section key={group.groupName} aria-label={group.groupName}>
-                <h3 className="flex items-baseline justify-between border-b-2 border-line pb-1 text-xs font-black uppercase tracking-[0.06em] text-ink">
-                  {group.groupName}
-                  <span className="font-mono font-bold normal-case tracking-normal text-muted">
-                    ×{group.count} · {formatRinggit(group.revenueSen)}
-                  </span>
-                </h3>
-                <ul className="divide-y divide-slate-100">
-                  {group.modifiers.map((row) => (
-                    <li key={row.key} className="flex items-start justify-between gap-3 py-3">
-                      <div className="min-w-0">
-                        <p className="font-bold text-ink">
-                          {row.type === 'REMOVAL' ? '− ' : ''}
-                          {row.name}
-                        </p>
-                        <p className="text-xs text-muted">
-                          {brandTag(row.brandId)} · {productsLabel(row)}
-                        </p>
-                      </div>
-                      <div className="text-right font-mono">
-                        {row.maxPriceSen === 0 ? (
-                          <Badge>Prep note</Badge>
-                        ) : (
-                          <Money sen={row.revenueSen} className="font-bold" />
-                        )}
-                        <p className="text-xs text-muted">
-                          ×{row.count} · {priceLabel(row)}
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
           </div>
+
         </>
       ) : null}
 

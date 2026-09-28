@@ -1,6 +1,5 @@
 import type { Expense, Order, SaleCorrection, Shift, TerminalStatus } from './types.ts'
 import { isOperatingExpense, orderNetByBrand } from './finance.ts'
-import type { DailyPoint } from '../components/DailySalesChart.tsx'
 
 /** `2026-09-08` → `2026-09`. */
 export function monthOf(businessDate: string): string {
@@ -77,6 +76,13 @@ export function formatDate(businessDate: string): string {
     month: 'short',
     timeZone: 'UTC',
   }).format(new Date(`${businessDate}T12:00:00Z`))
+}
+
+export type DailyPoint = {
+  date: string
+  /** Keyed by brand id. */
+  byBrand: Record<string, number>
+  totalSen: number
 }
 
 export function dailyPoints(

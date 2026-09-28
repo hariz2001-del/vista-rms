@@ -1,6 +1,6 @@
 import { ArrowRight, HandCoins, ReceiptText } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { DailySalesChart } from '../components/DailySalesChart.tsx'
+import { SalesLineChart } from '../components/SalesLineChart.tsx'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { SalesPerformanceBreakdown } from '../components/SalesPerformanceBreakdown.tsx'
 import { Badge, Money, Panel, SectionHeading, StatTile } from '../components/primitives.tsx'
@@ -10,10 +10,8 @@ import { formatRinggit } from '../domain/money.ts'
 import { liquidBalance } from '../domain/finance.ts'
 import {
   attentionItems,
-  dailyPoints,
   formatDate,
   formatRange,
-  inRange,
   summariseRange,
   type DateRange,
 } from '../domain/selectors.ts'
@@ -34,15 +32,6 @@ export function OverviewScreen({
   const summary = useMemo(
     () => summariseRange(range, store.orders, store.expenses, store.corrections),
     [range, store.orders, store.expenses, store.corrections],
-  )
-  const points = useMemo(
-    () =>
-      dailyPoints(
-        inRange(store.orders, range.startDate, range.endDate),
-        store.brands.map((brand) => brand.id),
-        inRange(store.corrections, range.startDate, range.endDate),
-      ),
-    [store.orders, store.corrections, store.brands, range],
   )
   const attention = useMemo(
     () => attentionItems(store.expenses, store.corrections),
@@ -149,9 +138,15 @@ export function OverviewScreen({
         />
       </section>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(17rem,0.75fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(17rem,0.75fr)]">
         <Panel className="p-5">
-          <DailySalesChart points={points} brands={store.brands} />
+          <SalesLineChart
+            range={range}
+            orders={store.orders}
+            corrections={store.corrections}
+            brands={store.brands}
+            categories={store.categories}
+          />
         </Panel>
 
         <Panel className="p-5">
