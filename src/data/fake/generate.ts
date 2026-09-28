@@ -84,7 +84,12 @@ const between = (min: number, max: number): number => min + Math.floor(rng() * (
 const FOOD_PRODUCTS = PRODUCTS.filter((p) => p.brandId === BRAND_FOOD && !p.isSoldOut)
 const DRINK_PRODUCTS = PRODUCTS.filter((p) => p.brandId === BRAND_DRINKS && !p.isSoldOut)
 
-export const PERIOD_START = '2026-08-01'
+/**
+ * The canonical demo calendar: about four months of trading ending on a
+ * Tuesday. `fake/index.ts` relabels every date so the last day lands on the
+ * real today — the same dataset, whichever day it is opened.
+ */
+export const PERIOD_START = '2026-05-02'
 export const TODAY = '2026-09-08'
 
 function eachDate(from: string, to: string): string[] {
@@ -437,7 +442,8 @@ export function generateHistory(): FakeHistory {
     }
   }
 
-  for (const month of ['2026-08', '2026-09']) {
+  const months = [...new Set(eachDate(PERIOD_START, TODAY).map((date) => date.slice(0, 7)))]
+  for (const month of months) {
     addExpense({
       businessDate: `${month}-01`,
       amountSen: 120_000,
