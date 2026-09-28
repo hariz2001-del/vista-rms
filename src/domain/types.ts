@@ -177,6 +177,21 @@ export type ExpenseCategory =
   | 'OPERATIONS'
   | 'MAINTENANCE'
   | 'CAPITAL_ASSET'
+  | 'ICE_GAS'
+
+/** How the money left. Informational: `PaymentSource` is what moves the ledger. */
+export type PaymentMethod = 'CASH' | 'DUITNOW_QR' | 'DEBIT_CARD' | 'BANK_TRANSFER'
+
+/** One line of an itemised receipt. Its lines sum exactly to the expense amount. */
+export type ExpenseItem = {
+  name: string
+  /** Thousandths of a unit: 2.5 kg is 2500. */
+  quantityMilli: number
+  unit: string | null
+  /** Negative for a discount or rounding line. */
+  unitPriceSen: number
+  totalSen: number
+}
 
 /** Who actually paid. A partner paying out of pocket creates a debt, not an outflow. */
 export type PaymentSource = 'STALL_FUNDS' | 'PARTNER_FOOD' | 'PARTNER_DRINKS'
@@ -194,6 +209,14 @@ export type Expense = {
   drinksAmountSen: number
   description: string
   receiptUrl: string | null
+  /** Receipt details — absent on expenses logged before they existed. */
+  receiptNo?: string | null
+  vendor?: string | null
+  /** "HH:MM" as printed. */
+  receiptTime?: string | null
+  paymentMethod?: PaymentMethod | null
+  notes?: string | null
+  items?: ExpenseItem[]
   /** For a partner-paid expense: has the stall settled up with them? */
   isSettled: boolean
   isLocked: boolean

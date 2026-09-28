@@ -4,10 +4,12 @@ import type {
   CounterSession,
   Expense,
   ExpenseCategory,
+  ExpenseItem,
   LedgerDirection,
   LedgerEntry,
   Order,
   Partner,
+  PaymentMethod,
   PaymentSource,
   PeriodClosure,
   Product,
@@ -16,6 +18,7 @@ import type {
   Shift,
   TerminalStatus,
 } from '../domain/types.ts'
+import { lineTotalSen } from '../domain/expense-items.ts'
 import { splitShared, type SettlementSummary } from '../domain/finance.ts'
 import { ACCOUNT, BRANDS, CATEGORIES, HISTORY, PRODUCTS, TODAY } from './fake/index.ts'
 
@@ -34,6 +37,13 @@ export type NewExpense = {
   brandId: string | null
   foodSplitPct: number
   description: string
+  receiptNo?: string | null
+  vendor?: string | null
+  receiptTime?: string | null
+  paymentMethod?: PaymentMethod | null
+  notes?: string | null
+  /** Without totals: the server computes each line's total itself. */
+  items?: Array<Omit<ExpenseItem, 'totalSen'>>
 }
 
 /** One deliberate correction to the cash balance. See `adjustBalance`. */
@@ -176,6 +186,15 @@ export function useDemoStore(_enabled = true) {
         drinksAmountSen: drinksSen,
         description: input.description,
         receiptUrl: null,
+        receiptNo: input.receiptNo ?? null,
+        vendor: input.vendor ?? null,
+        receiptTime: input.receiptTime ?? null,
+        paymentMethod: input.paymentMethod ?? null,
+        notes: input.notes ?? null,
+        items: (input.items ?? []).map((item) => ({
+          ...item,
+          totalSen: lineTotalSen(item.quantityMilli, item.unitPriceSen),
+        })),
         isSettled: input.paidBy === 'STALL_FUNDS',
         isLocked: false,
       }
