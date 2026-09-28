@@ -7,6 +7,7 @@ import {
   Users,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { nextResetLabel } from '../data/demo-session.ts'
 
 export type ScreenKey =
   | 'overview'
@@ -119,7 +120,10 @@ export function AppShell({
         <div className="border-t border-white/15 px-5 py-5 text-[0.66rem] leading-relaxed text-rail-muted">
           <p className="font-mono uppercase tracking-[0.12em] text-white/70">Working note</p>
           <p className="mt-2">
-            {isDemo ? 'Demo data. ' : ''}Figures are an operating result, not accounting profit.
+            {isDemo
+              ? `Demo data — your changes are kept until ${nextResetLabel(new Date())}, then it starts fresh. `
+              : ''}
+            Figures are an operating result, not accounting profit.
           </p>
           {onSignOut ? (
             <button

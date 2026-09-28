@@ -1,5 +1,10 @@
 import type { AccountSettings } from '../../domain/types.ts'
-import { generateHistory, PERIOD_START, TODAY } from './generate.ts'
+import {
+  generateHistory,
+  PERIOD_START as CANONICAL_START,
+  TODAY as CANONICAL_TODAY,
+} from './generate.ts'
+import { addDays, daysBetween, malaysiaToday, shiftDates } from './shift-dates.ts'
 
 export const ACCOUNT: AccountSettings = {
   businessName: 'Vista Demo Enterprise',
@@ -11,11 +16,22 @@ export const ACCOUNT: AccountSettings = {
 }
 
 /**
- * Generated once per page load and treated as read-only. When `api-vista` grows
- * the expense and settlement endpoints, this is the module that gets replaced by
- * `fetch` — nothing else has to change.
+ * The demo always ends today. The history is generated on its canonical
+ * calendar, then every date is slid forward to the real Malaysian today — so a
+ * visitor sees the same months of trading whichever day they open it, with
+ * today's shift still running.
  */
-export const HISTORY = generateHistory()
+const OFFSET_DAYS = daysBetween(CANONICAL_TODAY, malaysiaToday(new Date()))
 
-export { PERIOD_START, TODAY }
+export const TODAY = addDays(CANONICAL_TODAY, OFFSET_DAYS)
+export const PERIOD_START = addDays(CANONICAL_START, OFFSET_DAYS)
+
+const generated = generateHistory()
+
+/**
+ * Generated once per page load and treated as read-only. The terminal's
+ * heartbeat is already relative to the real clock, so it is not shifted.
+ */
+export const HISTORY = { ...shiftDates(generated, OFFSET_DAYS), terminal: generated.terminal }
+
 export * from './catalogue.ts'

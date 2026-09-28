@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AccountSettings,
   CounterSession,
@@ -21,6 +21,7 @@ import type {
 import { lineTotalSen } from '../domain/expense-items.ts'
 import { splitShared, type SettlementSummary } from '../domain/finance.ts'
 import { ACCOUNT, BRANDS, CATEGORIES, HISTORY, PRODUCTS, TODAY } from './fake/index.ts'
+import { saveDemoState } from './demo-session.ts'
 
 /**
  * Stands in for the API. Everything here is in memory and resets on reload.
@@ -140,22 +141,70 @@ const editMenuUnavailable = async (edit: MenuEdit): Promise<boolean> => {
  * demo mode (`VITE_DEMO=1`); everything else runs on `useApiStore`, which returns
  * the same shape. The argument exists only so the two are interchangeable.
  */
+/** Everything a visitor can change in the demo, saved between reloads. */
+export type DemoState = {
+  settings: AccountSettings
+  orders: Order[]
+  shifts: Shift[]
+  expenses: Expense[]
+  ledger: LedgerEntry[]
+  products: Product[]
+  closures: PeriodClosure[]
+  terminal: TerminalStatus
+  partners: Partner[]
+  counterSessions: CounterSession[]
+}
+
+/** Set by main.tsx before the first render, from the visitor's saved demo. */
+let restored: DemoState | null = null
+export function restoreDemoState(state: DemoState | null): void {
+  restored = state
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function useDemoStore(_enabled = true) {
-  const [settings, setSettingsState] = useState<AccountSettings>(ACCOUNT)
+  const [settings, setSettingsState] = useState<AccountSettings>(restored?.settings ?? ACCOUNT)
   const setSettings = useCallback((next: AccountSettings) => setSettingsState(next), [])
-  const [orders, setOrders] = useState<Order[]>(HISTORY.orders)
+  const [orders, setOrders] = useState<Order[]>(restored?.orders ?? HISTORY.orders)
   const [corrections] = useState<SaleCorrection[]>(HISTORY.corrections)
-  const [shifts, setShifts] = useState<Shift[]>(HISTORY.shifts)
-  const [expenses, setExpenses] = useState<Expense[]>(HISTORY.expenses)
-  const [ledger, setLedger] = useState<LedgerEntry[]>(HISTORY.ledger)
-  const [products, setProducts] = useState<Product[]>(PRODUCTS)
-  const [closures, setClosures] = useState<PeriodClosure[]>(HISTORY.closures)
-  const [terminal, setTerminal] = useState<TerminalStatus>(HISTORY.terminal)
-  const [partners, setPartners] = useState<Partner[]>(HISTORY.partners)
-  const [counterSessions, setCounterSessions] = useState<CounterSession[]>(() => [
-    { id: 'demo-counter', signedInAt: `${TODAY}T03:58:00Z`, lastUsedAt: new Date().toISOString() },
-  ])
+  const [shifts, setShifts] = useState<Shift[]>(restored?.shifts ?? HISTORY.shifts)
+  const [expenses, setExpenses] = useState<Expense[]>(restored?.expenses ?? HISTORY.expenses)
+  const [ledger, setLedger] = useState<LedgerEntry[]>(restored?.ledger ?? HISTORY.ledger)
+  const [products, setProducts] = useState<Product[]>(restored?.products ?? PRODUCTS)
+  const [closures, setClosures] = useState<PeriodClosure[]>(restored?.closures ?? HISTORY.closures)
+  const [terminal, setTerminal] = useState<TerminalStatus>(restored?.terminal ?? HISTORY.terminal)
+  const [partners, setPartners] = useState<Partner[]>(restored?.partners ?? HISTORY.partners)
+  const [counterSessions, setCounterSessions] = useState<CounterSession[]>(
+    () =>
+      restored?.counterSessions ?? [
+        { id: 'demo-counter', signedInAt: `${TODAY}T03:58:00Z`, lastUsedAt: new Date().toISOString() },
+      ],
+  )
+
+  // Save the visitor's demo after each change — not on first render, which is
+  // either the generated history or exactly what was just loaded.
+  const firstRender = useRef(true)
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void saveDemoState<DemoState>({
+        settings,
+        orders,
+        shifts,
+        expenses,
+        ledger,
+        products,
+        closures,
+        terminal,
+        partners,
+        counterSessions,
+      })
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [settings, orders, shifts, expenses, ledger, products, closures, terminal, partners, counterSessions])
 
   const renamePartner = useCallback((partnerId: string, name: string) => {
     setPartners((current) =>
