@@ -17,6 +17,8 @@ type Props = {
   corrections: SaleCorrection[]
   brands: Brand[]
   categories: Category[]
+  /** The owner's "day starts at" hour; a single day shows its 24 hours from here. */
+  dayRolloverHour: number
 }
 
 const HEIGHT = 260
@@ -68,7 +70,14 @@ function pointLabel(series: SalesSeries, at: string, long = false): string {
  * value on hover or arrow keys, and a table of the same figures. A long range
  * scrolls sideways with the axis pinned, opening at the latest day.
  */
-export function SalesLineChart({ range, orders, corrections, brands, categories }: Props) {
+export function SalesLineChart({
+  range,
+  orders,
+  corrections,
+  brands,
+  categories,
+  dayRolloverHour,
+}: Props) {
   const titleId = useId()
   const [mode, setMode] = useState<SeriesMode>('OVERALL')
   const [categoryBrandId, setCategoryBrandId] = useState<string | null>(brands[0]?.id ?? null)
@@ -80,11 +89,16 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
 
   const brandForCategories = categoryBrandId ?? brands[0]?.id ?? null
   const series = useMemo(
-    () => salesSeries(orders, corrections, range, mode, brands, categories, brandForCategories),
-    [orders, corrections, range, mode, brands, categories, brandForCategories],
+    () =>
+      salesSeries(orders, corrections, range, mode, brands, categories, brandForCategories, dayRolloverHour),
+    [orders, corrections, range, mode, brands, categories, brandForCategories, dayRolloverHour],
   )
   const totals = useMemo(() => seriesTotals(series), [series])
   const visible = series.defs.filter((def) => !hidden.has(def.key))
+  // Today's hours that have not started keep their place on the axis, but the
+  // line stops at the current hour rather than claiming RM 0 for the future.
+  const drawn = series.points.filter((point) => !point.isFuture)
+  const lastDrawn = drawn.length - 1
 
   // Measure the scrolling area so the plot fills it, or overflows it on purpose.
   useLayoutEffect(() => {
@@ -115,7 +129,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
   const xAt = (index: number): number =>
     PAD.side + (count <= 1 ? innerWidth / 2 : (index / (count - 1)) * innerWidth)
 
-  const values = visible.flatMap((def) => series.points.map((point) => point.values[def.key] ?? 0))
+  const values = visible.flatMap((def) => drawn.map((point) => point.values[def.key] ?? 0))
   // Round gridlines on one step, so an hour below zero still reads 0, 100, 200 …
   const minValue = Math.min(0, ...values)
   const rawMax = Math.max(0, ...values)
@@ -128,7 +142,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
   const tickLabel = (sen: number) => (sen < 0 ? `−${formatRinggitShort(-sen)}` : formatRinggitShort(sen))
 
   const pathFor = (def: SeriesDef) =>
-    series.points
+    drawn
       .map((point, index) => `${index === 0 ? 'M' : 'L'}${xAt(index).toFixed(1)},${yAt(point.values[def.key] ?? 0).toFixed(1)}`)
       .join(' ')
 
@@ -285,7 +299,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
               </tr>
             </thead>
             <tbody>
-              {series.points.map((point, index) => (
+              {drawn.map((point, index) => (
                 <tr key={`${point.at}-${index}`} className="border-t border-slate-100">
                   <td className="sticky left-0 bg-surface p-2 font-semibold whitespace-nowrap">
                     {pointLabel(series, point.at, true)}
@@ -353,9 +367,9 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
                 ))}
 
                 {/* A lone line gets a faint fill beneath it, stock-chart style. */}
-                {visible.length === 1 && visible[0] ? (
+                {visible.length === 1 && visible[0] && lastDrawn >= 0 ? (
                   <path
-                    d={`${pathFor(visible[0])} L${xAt(count - 1).toFixed(1)},${yAt(Math.max(0, floor)).toFixed(1)} L${xAt(0).toFixed(1)},${yAt(Math.max(0, floor)).toFixed(1)} Z`}
+                    d={`${pathFor(visible[0])} L${xAt(lastDrawn).toFixed(1)},${yAt(Math.max(0, floor)).toFixed(1)} L${xAt(0).toFixed(1)},${yAt(Math.max(0, floor)).toFixed(1)} Z`}
                     fill={visible[0].colour}
                     opacity={0.1}
                   />
@@ -375,7 +389,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
 
                 {series.kind === 'TIME'
                   ? visible.map((def) =>
-                      series.points.map((point, index) => (
+                      drawn.map((point, index) => (
                         <circle
                           key={`${def.key}-${point.at}`}
                           cx={xAt(index)}
@@ -413,7 +427,7 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
                       strokeOpacity={0.35}
                       strokeDasharray="3 3"
                     />
-                    {visible.map((def) => (
+                    {(activePoint.isFuture ? [] : visible).map((def) => (
                       <circle
                         key={def.key}
                         cx={xAt(active)}
@@ -439,14 +453,15 @@ export function SalesLineChart({ range, orders, corrections, brands, categories 
                   }
                 >
                   <p className="font-black">{pointLabel(series, activePoint.at, true)}</p>
-                  {visible.map((def) => (
+                  {activePoint.isFuture ? <p className="mt-0.5 text-white/70">Still to come</p> : null}
+                  {activePoint.isFuture ? null : visible.map((def) => (
                     <p key={def.key} className="mt-0.5 flex items-center gap-2">
                       <span aria-hidden="true" className="h-0.5 w-3 rounded-full" style={{ backgroundColor: def.colour }} />
                       {def.label}
                       <span className="ml-auto pl-3 tabular">{formatRinggit(activePoint.values[def.key] ?? 0)}</span>
                     </p>
                   ))}
-                  {visible.length > 1 ? (
+                  {visible.length > 1 && !activePoint.isFuture ? (
                     <p className="mt-1 flex border-t border-white/20 pt-1 font-black">
                       Total
                       <span className="ml-auto pl-3 tabular">
