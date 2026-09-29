@@ -97,7 +97,7 @@ export function SalesLineChart({
   const [frame, setFrame] = useState<TimeFrame>(60)
   const [active, setActive] = useState<number | null>(null)
   const [viewport, setViewport] = useState(0)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const brandForCategories = categoryBrandId ?? brands[0]?.id ?? null
   const series = useMemo(
@@ -124,13 +124,22 @@ export function SalesLineChart({
   const lastDrawn = drawn.length - 1
 
   // Measure the scrolling area so the plot fills it, or overflows it on purpose.
+  // Keyed on the element itself: the plot unmounts on a day with no sales (and
+  // in table view) and mounts again after, and it must be measured each time.
+  // A zero reading is the old element leaving the page, never a real width —
+  // taking it would draw every later day's chart zero pixels wide.
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null)
   useLayoutEffect(() => {
-    const element = scrollRef.current
-    if (!element) return
-    const observer = new ResizeObserver(([entry]) => setViewport(entry?.contentRect.width ?? 0))
-    observer.observe(element)
+    scrollRef.current = scrollElement
+    if (!scrollElement) return
+    if (scrollElement.clientWidth > 0) setViewport(scrollElement.clientWidth)
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0
+      if (width > 0) setViewport(width)
+    })
+    observer.observe(scrollElement)
     return () => observer.disconnect()
-  }, [showTable])
+  }, [scrollElement])
 
   const count = series.points.length
   const plotWidth = Math.max(
@@ -382,7 +391,7 @@ export function SalesLineChart({
             ))}
           </svg>
 
-          <div ref={scrollRef} className="scrollbar-subtle relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
+          <div ref={setScrollElement} className="scrollbar-subtle relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden">
             <div className="relative" style={{ width: plotWidth, height: HEIGHT }}>
               <svg
                 width={plotWidth}
