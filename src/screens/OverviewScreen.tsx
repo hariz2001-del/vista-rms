@@ -1,5 +1,6 @@
 import { ArrowRight, HandCoins, ReceiptText } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { PanelErrorBoundary } from '../components/PanelErrorBoundary.tsx'
 import { SalesLineChart } from '../components/SalesLineChart.tsx'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { SalesPerformanceBreakdown } from '../components/SalesPerformanceBreakdown.tsx'
@@ -140,6 +141,7 @@ export function OverviewScreen({
 
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(17rem,0.75fr)]">
         <Panel className="p-5">
+          <PanelErrorBoundary name="sales chart">
           <SalesLineChart
             range={range}
             orders={store.orders}
@@ -148,6 +150,7 @@ export function OverviewScreen({
             categories={store.categories}
             dayRolloverHour={store.settings.dayRolloverHour ?? 5}
           />
+          </PanelErrorBoundary>
         </Panel>
 
         <Panel className="p-5">
@@ -195,6 +198,7 @@ export function OverviewScreen({
       </div>
 
       <Panel className="p-5">
+        <PanelErrorBoundary name="sales breakdown">
         <SalesPerformanceBreakdown
           range={range}
           orders={store.orders}
@@ -203,6 +207,7 @@ export function OverviewScreen({
           brands={store.brands}
           periodNetSalesSen={summary.netSalesSen}
         />
+        </PanelErrorBoundary>
       </Panel>
     </div>
   )

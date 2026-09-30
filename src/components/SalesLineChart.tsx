@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { formatRinggit, formatRinggitShort } from '../domain/money.ts'
 import {
   TIME_FRAMES,
+  axisTicks,
   salesSeries,
   seriesTotals,
   type SalesSeries,
@@ -34,14 +35,6 @@ const MODES: Array<{ key: SeriesMode; label: string }> = [
   { key: 'BRAND', label: 'By brand' },
   { key: 'CATEGORY', label: 'By category' },
 ]
-
-function niceCeiling(value: number): number {
-  if (value <= 0) return 100
-  const magnitude = 10 ** Math.floor(Math.log10(value))
-  const scaled = value / magnitude
-  const step = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 2.5 ? 2.5 : scaled <= 5 ? 5 : 10
-  return step * magnitude
-}
 
 const dayFormat = new Intl.DateTimeFormat('en-MY', { day: 'numeric', month: 'short', timeZone: 'UTC' })
 const longDayFormat = new Intl.DateTimeFormat('en-MY', {
@@ -162,15 +155,9 @@ export function SalesLineChart({
     PAD.side + (count <= 1 ? innerWidth / 2 : (index / (count - 1)) * innerWidth)
 
   const values = visible.flatMap((def) => drawn.map((point) => point.values[def.key] ?? 0))
-  // Round gridlines on one step, so an hour below zero still reads 0, 100, 200 …
-  const minValue = Math.min(0, ...values)
-  const rawMax = Math.max(0, ...values)
-  const tickStep = niceCeiling(Math.max(1, rawMax - minValue) / 4)
-  const floor = Math.floor(minValue / tickStep) * tickStep
-  const maxValue = Math.max(floor + tickStep, Math.ceil(rawMax / tickStep) * tickStep)
+  // Round gridlines on one whole-sen step, either side of zero.
+  const { floor, ceiling: maxValue, ticks } = axisTicks(values)
   const yAt = (sen: number) => PAD.top + plotHeight - ((sen - floor) / (maxValue - floor)) * plotHeight
-  const ticks: number[] = []
-  for (let tick = floor; tick <= maxValue; tick += tickStep) ticks.push(tick)
   const tickLabel = (sen: number) => (sen < 0 ? `−${formatRinggitShort(-sen)}` : formatRinggitShort(sen))
 
   const pathFor = (def: SeriesDef) =>
