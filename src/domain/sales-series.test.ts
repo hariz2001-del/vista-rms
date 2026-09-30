@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import type { Brand, Category, Order, OrderLine, SaleCorrection } from './types.ts'
-import { CATEGORY_COLOURS, OTHER_KEY, OVERALL_KEY, salesSeries, seriesTotals } from './sales-series.ts'
+import { CATEGORY_COLOURS, OTHER_KEY, OVERALL_KEY, axisTicks, salesSeries, seriesTotals } from './sales-series.ts'
+
+describe('axisTicks', () => {
+  it('gives a day with no sales yet a whole-ringgit axis, not a fraction of a sen', () => {
+    // This exact case — an empty morning — blanked the whole RMS.
+    const { floor, ceiling, ticks } = axisTicks([0, 0, 0])
+    expect(floor).toBe(0)
+    expect(ceiling).toBe(100)
+    expect(ticks).toEqual([0, 100])
+    expect(axisTicks([])).toEqual({ floor: 0, ceiling: 100, ticks: [0, 100] })
+  })
+
+  it('uses whole-sen round steps, and reaches below zero when a value does', () => {
+    for (const values of [[1], [3], [99], [150], [25_300], [-1_600, 22_350], [7, -3]]) {
+      const { floor, ceiling, ticks } = axisTicks(values)
+      for (const tick of ticks) expect(Number.isInteger(tick)).toBe(true)
+      expect(floor).toBeLessThanOrEqual(Math.min(0, ...values))
+      expect(ceiling).toBeGreaterThanOrEqual(Math.max(0, ...values))
+    }
+    expect(axisTicks([-1_600, 22_350]).ticks).toEqual([-10_000, 0, 10_000, 20_000, 30_000])
+  })
+})
 
 const BRANDS: Brand[] = [
   { id: 'food', name: 'Food', colour: '#e35f27', softColour: '#fff', chartColour: '#e2601f' },

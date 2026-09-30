@@ -228,6 +228,32 @@ export function salesSeries(
   }
 }
 
+/** 1, 2, 2.5, 5 or 10 × a power of ten, at or above `value`. */
+function niceStep(value: number): number {
+  const magnitude = 10 ** Math.floor(Math.log10(value))
+  const scaled = value / magnitude
+  const step = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 2.5 ? 2.5 : scaled <= 5 ? 5 : 10
+  return step * magnitude
+}
+
+/**
+ * The y-axis for a set of sen values: round gridlines on one step, spanning
+ * zero and everything plotted. The step is whole sen and at least RM 1, so a
+ * day with no sales yet — every value zero — still gets a sane axis rather
+ * than a gridline at a fraction of a sen (which the money formatter rightly
+ * refuses, and which took the whole RMS down on an empty morning).
+ */
+export function axisTicks(values: readonly number[]): { floor: number; ceiling: number; ticks: number[] } {
+  const min = Math.min(0, ...values)
+  const max = Math.max(0, ...values)
+  const step = Math.max(100, Math.round(niceStep(Math.max(1, max - min) / 4)))
+  const floor = Math.floor(min / step) * step
+  const ceiling = Math.max(floor + step, Math.ceil(max / step) * step)
+  const ticks: number[] = []
+  for (let tick = floor; tick <= ceiling; tick += step) ticks.push(tick)
+  return { floor, ceiling, ticks }
+}
+
 /** Each line's figure for the whole period: its days, or its hours, summed. */
 export function seriesTotals(series: SalesSeries): Record<string, number> {
   const totals = emptyValues(series.defs)
