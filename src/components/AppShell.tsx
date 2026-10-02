@@ -2,6 +2,7 @@ import {
   BookOpenText,
   LayoutDashboard,
   Receipt,
+  ReceiptText,
   Settings as SettingsIcon,
   UtensilsCrossed,
   Users,
@@ -12,13 +13,15 @@ import { nextResetLabel } from '../data/demo-session.ts'
 export type ScreenKey =
   | 'overview'
   | 'cashflow'
+  | 'receipts'
   | 'expenses'
   | 'settlement'
   | 'menu'
   | 'settings'
 
 /**
- * Six sections, not the predecessor's sprawl.
+ * Seven sections, not the predecessor's sprawl. Receipts is the counter's own
+ * tickets, read-only: it shows what was sold, never a total of its own.
  *
  * That product ended up with five overlapping places to look at money, two of
  * which disagreed with each other. The rule here: money movement lives in
@@ -34,6 +37,7 @@ export const NAV: Array<{
 }> = [
   { key: 'overview', label: 'Overview', mobileLabel: 'Home', icon: LayoutDashboard },
   { key: 'cashflow', label: 'Cashflow', mobileLabel: 'Cash', icon: BookOpenText },
+  { key: 'receipts', label: 'Receipts', mobileLabel: 'Sales', icon: ReceiptText },
   { key: 'expenses', label: 'Expenses', mobileLabel: 'Spend', icon: Receipt },
   { key: 'settlement', label: 'Settlement', mobileLabel: 'Owed', icon: Users },
   { key: 'menu', label: 'Menu', mobileLabel: 'Menu', icon: UtensilsCrossed },
@@ -164,7 +168,10 @@ export function AppShell({
         <main className="flex-1 p-4 pb-24 sm:p-7 lg:px-10 lg:py-8 xl:px-12">{children}</main>
 
         {/* Mobile tab bar — the owner reads this on a phone as often as a laptop. */}
-        <nav aria-label="Primary" className={`fixed inset-x-0 bottom-0 z-30 grid ${nav.length === 6 ? 'grid-cols-6' : 'grid-cols-5'} border-t border-line bg-surface/95 shadow-[0_-4px_18px_rgba(24,33,29,0.06)] backdrop-blur-sm lg:hidden`}>
+        <nav
+          aria-label="Primary"
+          style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}
+          className={`fixed inset-x-0 bottom-0 z-30 grid border-t border-line bg-surface/95 shadow-[0_-4px_18px_rgba(24,33,29,0.06)] backdrop-blur-sm lg:hidden`}>
           {nav.map((item) => {
             const Icon = item.icon
             const isActive = current === item.key

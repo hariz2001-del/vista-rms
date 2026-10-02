@@ -18,6 +18,7 @@ import { CashflowScreen } from './screens/CashflowScreen.tsx'
 import { ExpensesScreen } from './screens/ExpensesScreen.tsx'
 import { MenuScreen } from './screens/MenuScreen.tsx'
 import { OverviewScreen } from './screens/OverviewScreen.tsx'
+import { ReceiptsScreen } from './screens/ReceiptsScreen.tsx'
 import { SettingsScreen } from './screens/SettingsScreen.tsx'
 import { SettlementScreen } from './screens/SettlementScreen.tsx'
 import { SignInScreen } from './screens/SignInScreen.tsx'
@@ -170,6 +171,7 @@ export default function App() {
     >
       {screen === 'overview' ? <OverviewScreen store={store} onNavigate={setScreen} /> : null}
       {screen === 'cashflow' ? <CashflowScreen store={store} /> : null}
+      {screen === 'receipts' ? <ReceiptsScreen store={store} /> : null}
       {screen === 'expenses' ? <ExpensesScreen store={store} /> : null}
       {screen === 'settlement' ? <SettlementScreen store={store} /> : null}
       {screen === 'menu' ? <MenuScreen store={store} /> : null}
