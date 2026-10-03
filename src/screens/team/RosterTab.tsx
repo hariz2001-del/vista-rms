@@ -1,4 +1,4 @@
-import { AlertTriangle, Copy, Image as ImageIcon, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Image as ImageIcon, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Badge, EmptyState } from '../../components/primitives.tsx'
 import {
@@ -21,11 +21,12 @@ import { RosterShare } from './RosterShare.tsx'
 
 /**
  * The roster, kept simple: make a week (empty, or a copy of an earlier one),
- * add or edit shifts — or copy a whole day's shifts from another day — put
- * people on them, publish, and export for the group chat.
+ * add or edit shifts — or copy a whole day's shifts from another day — let
+ * staff pick the shifts they can work in the Team app, give the shifts out
+ * from those picks (or by hand), publish, and export for the group chat.
  *
- * The applications round, the suggested-roster engine and the fairness view
- * still exist in the API; they are simply not offered here for now.
+ * The suggested-roster engine and the fairness view still exist in the API;
+ * they are simply not offered here for now.
  */
 
 function NewWeek({ existing, onCreated }: { existing: WeekSummary[]; onCreated: (detail: WeekDetail) => void }) {
@@ -226,6 +227,11 @@ function SlotCard({
   const active = slot.assignments.filter((assignment) => assignment.status === 'ACTIVE')
   const choices = detail.staff.filter((staff) => staff.status === 'ACTIVE' && !active.some((assignment) => assignment.staffId === staff.id))
   const clashes = detail.warnings.filter((warning) => warning.slotId === slot.id && warning.kind === 'OVERLAP')
+  // Who picked this shift in the Team app and is not on it yet, first pick first.
+  const picks = slot.applicants
+    .filter((pick) => !active.some((assignment) => assignment.staffId === pick.staffId))
+    .toSorted((a, b) => a.appliedAt.localeCompare(b.appliedAt))
+    .flatMap((pick) => detail.staff.filter((staff) => staff.id === pick.staffId && staff.status === 'ACTIVE'))
 
   async function run(action: () => Promise<WeekDetail>) {
     try {
@@ -343,6 +349,28 @@ function SlotCard({
           </li>
         ))}
       </ul>
+
+      {picks.length > 0 ? (
+        <div className="mt-2 border-t border-dashed border-line pt-2">
+          <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted">Picked by</p>
+          <ul className="mt-1 space-y-1">
+            {picks.map((staff) => (
+              <li key={staff.id} className="flex items-center gap-1 text-sm">
+                <span className="min-w-0 flex-1 truncate">{staff.name}</span>
+                <button
+                  type="button"
+                  onClick={() => void assign(staff.id)}
+                  aria-label={`Give this shift to ${staff.name}`}
+                  className="flex min-h-7 items-center gap-1 bg-rail px-2 text-xs font-bold text-white hover:opacity-90"
+                >
+                  <Check aria-hidden="true" className="size-3.5" /> Give
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!short ? <p className="mt-1 text-[0.7rem] text-muted">This shift is already full.</p> : null}
+        </div>
+      ) : null}
 
       {choices.length > 0 ? (
         <select
@@ -478,6 +506,43 @@ function WeekView({
   }
 
   const published = data.week.status === 'PUBLISHED'
+  const picking = data.week.status === 'APPLICATIONS_OPEN'
+  const pickers = new Set(data.slots.flatMap((slot) => slot.applicants.map((pick) => pick.staffId))).size
+  // Picks not yet turned into a place on the shift.
+  const waitingPicks = data.slots.reduce(
+    (sum, slot) =>
+      sum +
+      slot.applicants.filter((pick) => !slot.assignments.some((assignment) => assignment.status === 'ACTIVE' && assignment.staffId === pick.staffId)).length,
+    0,
+  )
+  const stageText = published
+    ? 'Published — staff can see their shifts'
+    : picking
+      ? 'Staff are picking shifts in the Team app'
+      : data.week.status === 'DRAFT'
+        ? 'Draft — staff cannot see it yet'
+        : 'Picking closed — staff cannot see the roster yet'
+
+  async function giveFromPicks() {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const result = await rosterApi.fillFromPicks(data!.week.id)
+      update(result.detail)
+      setMessage(
+        result.added === 0 && result.leftOver === 0
+          ? 'Nothing to give — no new picks.'
+          : `Gave out ${result.added} shift${result.added === 1 ? '' : 's'}.` +
+              (result.leftOver > 0
+                ? ` ${result.leftOver} pick${result.leftOver === 1 ? '' : 's'} did not fit (shift full, or they already work then) — still listed under “Picked by”.`
+                : ''),
+      )
+    } catch (caught) {
+      setMessage(errorText(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
   const days = Array.from({ length: 7 }, (_, index) => addDaysTo(data.week.weekStart, index))
   const unfilled = data.slots.reduce(
     (sum, slot) => sum + Math.max(0, slot.requiredStaff - slot.assignments.filter((assignment) => assignment.status === 'ACTIVE').length),
@@ -490,7 +555,7 @@ function WeekView({
         <div>
           <h3 className="font-display text-2xl font-bold">Week of {dayName(data.week.weekStart, 'long')}</h3>
           <p className="text-xs text-muted">
-            {published ? 'Published — staff can see it' : 'Draft — staff cannot see it yet'} · last updated {dateTimeText(data.week.updatedAt)}
+            {stageText} · last updated {dateTimeText(data.week.updatedAt)}
           </p>
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
@@ -499,6 +564,37 @@ function WeekView({
               Unpublish
             </button>
           ) : (
+            <>
+              {picking ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => act(() => rosterApi.setStatus(data.week.id, 'APPLICATIONS_CLOSED'))}
+                  className="vista-button-secondary min-h-11 disabled:opacity-50"
+                >
+                  Stop picking
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    if (data.slots.length === 0) {
+                      setMessage('Add the week’s shifts first, then let staff pick.')
+                      return
+                    }
+                    void act(() => rosterApi.setStatus(data.week.id, 'APPLICATIONS_OPEN'))
+                  }}
+                  className="vista-button-secondary min-h-11 disabled:opacity-50"
+                >
+                  Let staff pick shifts
+                </button>
+              )}
+              {waitingPicks > 0 ? (
+                <button type="button" disabled={busy} onClick={() => void giveFromPicks()} className="vista-button-secondary min-h-11 disabled:opacity-50">
+                  Give shifts to who picked
+                </button>
+              ) : null}
             <button
               type="button"
               disabled={busy}
@@ -516,6 +612,7 @@ function WeekView({
             >
               Publish to staff
             </button>
+            </>
           )}
           <button type="button" onClick={() => setSharing(true)} className="vista-button-secondary flex min-h-11 items-center gap-2">
             <ImageIcon aria-hidden="true" className="size-4" /> <Printer aria-hidden="true" className="size-4" /> Export
@@ -547,6 +644,16 @@ function WeekView({
             <X aria-hidden="true" className="size-4" />
           </button>
         </div>
+      ) : null}
+
+      {picking ? (
+        <p className="bg-rail-soft p-3 text-sm">
+          <strong>Staff can now pick shifts</strong> at team.vistahub.my.{' '}
+          {pickers === 0
+            ? 'Nobody has picked yet.'
+            : `${pickers} ${pickers === 1 ? 'person has' : 'people have'} picked. Their names show on each shift under “Picked by”.`}{' '}
+          When you are ready, press <strong>Give shifts to who picked</strong> (or tap Give on a name), check the roster, then <strong>Publish</strong>.
+        </p>
       ) : null}
 
       {data.slots.length === 0 ? (
@@ -599,7 +706,7 @@ export function RosterTab() {
               >
                 <span className="block text-sm font-bold">{week.label}</span>
                 <span className="block text-xs text-muted">
-                  {week.status === 'PUBLISHED' ? 'Published' : 'Draft'} · {week.filled}/{week.seats} filled
+                  {week.status === 'PUBLISHED' ? 'Published' : week.status === 'APPLICATIONS_OPEN' ? 'Staff picking' : 'Draft'} · {week.filled}/{week.seats} filled
                 </span>
               </button>
             </li>

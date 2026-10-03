@@ -84,7 +84,7 @@ export function GettingStarted({ current, onGo, onChanged }: { current: 'roster'
     {
       done: data.hasWeek,
       title: 'Make your first roster',
-      hint: 'Create a week on the left of Roster, add shifts, put people on them, publish.',
+      hint: 'Create a week on the left of Roster and add shifts. Let staff pick, give out the shifts, then publish.',
       action:
         current === 'roster' ? null : (
           <button type="button" onClick={() => onGo('roster')} className="vista-button-primary min-h-10">
