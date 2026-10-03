@@ -153,12 +153,14 @@ function StaffEditor({
   workTypes,
   onChanged,
   onPin,
+  onDeleted,
   onClose,
 }: {
   staff: Staff
   workTypes: WorkType[]
   onChanged: (staff: Staff) => void
   onPin: (pin: string) => void
+  onDeleted: () => void
   onClose: () => void
 }) {
   const [name, setName] = useState(staff.name)
@@ -276,6 +278,22 @@ function StaffEditor({
         >
           {staff.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate'}
         </button>
+        <button
+          type="button"
+          onClick={async () => {
+            if (!window.confirm(`Delete ${staff.name} for good? Their shifts are removed and they can no longer sign in. This cannot be undone.`)) return
+            setError(null)
+            try {
+              await teamApi.deleteStaff(staff.id)
+              onDeleted()
+            } catch (caught) {
+              setError(errorText(caught))
+            }
+          }}
+          className="min-h-11 bg-critical px-4 text-sm font-bold text-white hover:opacity-90"
+        >
+          Delete
+        </button>
       </section>
 
       {message ? <p className="text-sm font-bold text-good" role="status">{message}</p> : null}
@@ -360,6 +378,10 @@ export function StaffTab() {
               staff={selected}
               workTypes={data.workTypes}
               onChanged={replace}
+              onDeleted={() => {
+                setSelectedId(null)
+                reload()
+              }}
               onPin={(pin) => {
                 setShownPin({ name: selected.name, pin })
                 reload()
