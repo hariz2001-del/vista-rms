@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { TimeInput } from './TimeInput.tsx'
 import type { NewExpense } from '../data/store.ts'
 import {
   formatQuantity,
@@ -499,12 +500,7 @@ export function ExpenseForm({
             </label>
             <label className="block">
               <span className="vista-field-label">Time</span>
-              <input
-                type="time"
-                value={receiptTime}
-                onChange={(event) => setReceiptTime(event.target.value)}
-                className={`${fieldClass} px-2`}
-              />
+              <TimeInput label="Time" optional value={receiptTime} onChange={setReceiptTime} className={`${fieldClass} px-2`} />
             </label>
           </div>
         </div>

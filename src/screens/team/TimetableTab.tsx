@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Panel } from '../../components/primitives.tsx'
+import { TimeInput } from '../../components/TimeInput.tsx'
 import { dayName, rosterApi, WEEKDAYS, type ClosedPeriod, type OperatingDay, type SlotTemplate } from '../../data/roster-api.ts'
 import { errorText, teamApi, useLoad, type WorkType } from '../../data/team-api.ts'
 
@@ -32,9 +33,9 @@ function Hours({ initial }: { initial: OperatingDay[] }) {
             </label>
             {day.isClosed ? null : (
               <>
-                <input type="time" aria-label={`${WEEKDAYS[day.weekday]} opens`} value={day.opensAt} onChange={(event) => set(day.weekday, { opensAt: event.target.value })} className="vista-control px-2" />
+                <TimeInput label={`${WEEKDAYS[day.weekday]} opens`} minuteStep={5} value={day.opensAt} onChange={(value) => set(day.weekday, { opensAt: value })} className="vista-control px-2" />
                 <span className="text-muted">to</span>
-                <input type="time" aria-label={`${WEEKDAYS[day.weekday]} closes`} value={day.closesAt} onChange={(event) => set(day.weekday, { closesAt: event.target.value })} className="vista-control px-2" />
+                <TimeInput label={`${WEEKDAYS[day.weekday]} closes`} minuteStep={5} value={day.closesAt} onChange={(value) => set(day.weekday, { closesAt: value })} className="vista-control px-2" />
               </>
             )}
           </li>
@@ -131,7 +132,7 @@ function Templates({ initial, workTypes }: { initial: SlotTemplate[]; workTypes:
     <Panel className="space-y-3">
       <h3 className="text-sm font-black uppercase tracking-[0.06em]">The usual week’s shifts</h3>
       <p className="text-xs text-muted">
-        New roster weeks start from these. Any start and end time works — 4:30 pm to 9:00 pm is simply 4.5 hours. An end at
+        New roster weeks start from these. Any start and end time works — 16:30 to 21:00 is simply 4.5 hours. An end at
         or before the start runs past midnight.
       </p>
       <div className="overflow-x-auto">
@@ -162,10 +163,10 @@ function Templates({ initial, workTypes }: { initial: SlotTemplate[]; workTypes:
                   </select>
                 </td>
                 <td className="py-1 pr-2">
-                  <input type="time" value={row.startTime} onChange={(event) => set(index, { startTime: event.target.value })} className="vista-control px-1" aria-label="Start" />
+                  <TimeInput label="Start" minuteStep={5} value={row.startTime} onChange={(value) => set(index, { startTime: value })} className="vista-control px-1" />
                 </td>
                 <td className="py-1 pr-2">
-                  <input type="time" value={row.endTime} onChange={(event) => set(index, { endTime: event.target.value })} className="vista-control px-1" aria-label="End" />
+                  <TimeInput label="End" minuteStep={5} value={row.endTime} onChange={(value) => set(index, { endTime: value })} className="vista-control px-1" />
                 </td>
                 <td className="py-1 pr-2 tabular text-muted">{Math.round((minutes(row.startTime, row.endTime) / 60) * 100) / 100}h</td>
                 <td className="py-1 pr-2">

@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, Copy, Image as ImageIcon, Pencil, Plus, Printer, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Badge, EmptyState } from '../../components/primitives.tsx'
+import { TimeInput } from '../../components/TimeInput.tsx'
 import {
   addDaysTo,
   dateTimeText,
@@ -111,13 +112,13 @@ function ShiftForm({
       className="space-y-2 border border-rail/40 bg-canvas p-2 text-xs"
     >
       <div className="grid grid-cols-2 gap-1">
-        <label className="block">
+        <label className="col-span-2 block">
           <span className="vista-field-label">Start</span>
-          <input type="time" value={startTime} onChange={(event) => setStart(event.target.value)} className="vista-control w-full px-1" />
+          <TimeInput label="Start" minuteStep={5} value={startTime} onChange={setStart} className="vista-control w-full px-1" />
         </label>
-        <label className="block">
+        <label className="col-span-2 block">
           <span className="vista-field-label">End</span>
-          <input type="time" value={endTime} onChange={(event) => setEnd(event.target.value)} className="vista-control w-full px-1" />
+          <TimeInput label="End" minuteStep={5} value={endTime} onChange={setEnd} className="vista-control w-full px-1" />
         </label>
         <label className="block">
           <span className="vista-field-label">People needed</span>

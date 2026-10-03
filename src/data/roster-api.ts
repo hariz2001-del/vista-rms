@@ -328,25 +328,24 @@ export function dayName(date: string, style: 'short' | 'long' = 'short'): string
 }
 
 export function clockText(iso: string): string {
-  return new Intl.DateTimeFormat('en-MY', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: KL }).format(new Date(iso))
+  return new Intl.DateTimeFormat('en-MY', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: KL }).format(new Date(iso))
 }
 
 export function dateTimeText(iso: string): string {
   return new Intl.DateTimeFormat('en-MY', {
     day: 'numeric',
     month: 'short',
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true,
+    hourCycle: 'h23',
     timeZone: KL,
   }).format(new Date(iso))
 }
 
-/** "17:30" → "5:30 pm". */
+/** "17:30" → "17:30", "9:5" → "09:05": 24-hour, everywhere in Vista. */
 export function timeText(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number)
-  const hour = h ?? 0
-  return `${hour % 12 === 0 ? 12 : hour % 12}${m ? `:${String(m).padStart(2, '0')}` : ''} ${hour < 12 ? 'am' : 'pm'}`
+  return `${String(h ?? 0).padStart(2, '0')}:${String(m ?? 0).padStart(2, '0')}`
 }
 
 /** `YYYY-MM-DD` + `HH:MM` in Malaysia → ISO with offset, as the API takes it. */

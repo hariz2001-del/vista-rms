@@ -21,9 +21,9 @@ import { bannerState, type BannerState } from '../domain/selectors.ts'
 
 function clockTime(iso: string): string {
   return new Intl.DateTimeFormat('en-MY', {
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true,
+    hourCycle: 'h23',
     timeZone: 'Asia/Kuala_Lumpur',
   }).format(new Date(iso))
 }

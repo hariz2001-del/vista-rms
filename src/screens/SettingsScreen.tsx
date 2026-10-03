@@ -2,11 +2,10 @@ import { useState } from 'react'
 import { Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 
-/** 0 → "midnight", 5 → "5:00 am", 12 → "12:00 noon". */
+/** 0 → "00:00 (midnight)", 5 → "05:00", 12 → "12:00". */
 function rolloverLabel(hour: number): string {
-  if (hour === 0) return 'midnight'
-  if (hour === 12) return '12:00 noon'
-  return `${hour}:00 am`
+  if (hour === 0) return '00:00 (midnight)'
+  return `${String(hour).padStart(2, '0')}:00`
 }
 
 /** What the chosen hour means, in one sentence. */
@@ -14,7 +13,7 @@ function rolloverExample(hour: number): string {
   if (hour === 0) {
     return 'Every sale counts for the calendar day it was made on.'
   }
-  const example = hour > 1 ? '1:00 am' : '12:30 am'
+  const example = hour > 1 ? '01:00' : '00:30'
   return `Sales before ${rolloverLabel(hour)} count for the night before — a sale at ${example} on Saturday counts as Friday's trading, so a late shift stays one day in your books.`
 }
 
@@ -22,9 +21,9 @@ function clock(iso: string): string {
   return new Intl.DateTimeFormat('en-MY', {
     day: 'numeric',
     month: 'short',
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
-    hour12: true,
+    hourCycle: 'h23',
     timeZone: 'Asia/Kuala_Lumpur',
   }).format(new Date(iso))
 }
