@@ -1,8 +1,8 @@
 /**
  * The public demo at demorms.vistahub.my keeps a visitor's changes — expenses
  * logged, settings changed, a period closed — across reloads, in their own
- * browser, until the next reset: every 3 hours on the Malaysian clock (12am,
- * 3am, 6am …) and whenever the date changes. Then it starts again from the
+ * browser, until the next reset: every 3 hours on the Malaysian clock (00:00,
+ * 03:00, 06:00 …) and whenever the date changes. Then it starts again from the
  * generated history. Nothing is ever sent anywhere.
  *
  * IndexedDB rather than localStorage: months of orders run to megabytes, past
@@ -44,12 +44,13 @@ export function msUntilNextReset(now: Date): number {
   return blockMs - ((now.getTime() + 8 * 3_600_000) % blockMs)
 }
 
-/** "3:00 pm" — when the current demo resets. */
+/** "15:00" — when the current demo resets. */
 export function nextResetLabel(now: Date): string {
   return new Intl.DateTimeFormat('en-MY', {
     timeZone: 'Asia/Kuala_Lumpur',
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
+    hourCycle: 'h23',
   }).format(new Date(now.getTime() + msUntilNextReset(now)))
 }
 

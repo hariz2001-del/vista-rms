@@ -43,19 +43,19 @@ const longDayFormat = new Intl.DateTimeFormat('en-MY', {
   month: 'short',
   timeZone: 'UTC',
 })
-const hourFormat = new Intl.DateTimeFormat('en-MY', { hour: 'numeric', timeZone: 'Asia/Kuala_Lumpur' })
-const minuteFormat = new Intl.DateTimeFormat('en-MY', {
-  hour: 'numeric',
+const timeFormat = new Intl.DateTimeFormat('en-MY', {
+  hour: '2-digit',
   minute: '2-digit',
+  hourCycle: 'h23',
   timeZone: 'Asia/Kuala_Lumpur',
 })
 
-/** "9 pm" on the hour, "9:30 pm" otherwise. */
+/** "21:00", "21:30" — 24-hour, everywhere in Vista. */
 function clock(date: Date): string {
-  return (date.getUTCMinutes() === 0 ? hourFormat : minuteFormat).format(date)
+  return timeFormat.format(date)
 }
 
-/** A day ("28 Sept"), or a time frame: "9 pm" on the axis, "9:30 pm – 10 pm" in full. */
+/** A day ("28 Sept"), or a time frame: "21:00" on the axis, "21:30 – 22:00" in full. */
 function pointLabel(series: SalesSeries, at: string, long = false, frameMinutes = 60): string {
   if (series.kind === 'TIME') {
     const start = new Date(at)

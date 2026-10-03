@@ -1,6 +1,7 @@
 import { Check, Pencil, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Badge, EmptyState, Panel } from '../../components/primitives.tsx'
+import { TimeInput } from '../../components/TimeInput.tsx'
 import {
   addDaysTo,
   clockText,
@@ -50,7 +51,7 @@ function TimesEditor({
     <div className="mt-2 grid gap-2 border border-rail/40 bg-canvas p-3 text-xs sm:grid-cols-[auto_auto_auto_1fr_auto]">
       <label className="block">
         <span className="vista-field-label">Start ({dayName(start.date)})</span>
-        <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="vista-control mt-1 px-2" />
+        <span className="mt-1 block"><TimeInput label="Start" value={startTime} onChange={setStartTime} className="vista-control px-2" /></span>
       </label>
       <label className="block">
         <span className="vista-field-label">End date</span>
@@ -58,7 +59,7 @@ function TimesEditor({
       </label>
       <label className="block">
         <span className="vista-field-label">End</span>
-        <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="vista-control mt-1 px-2" />
+        <span className="mt-1 block"><TimeInput label="End" value={endTime} onChange={setEndTime} className="vista-control px-2" /></span>
       </label>
       <label className="block">
         <span className="vista-field-label">Work type</span>
@@ -156,11 +157,11 @@ function ManualEntry({ staff, workTypes, onAdded }: { staff: Staff[]; workTypes:
         </label>
         <label className="block">
           <span className="vista-field-label">From</span>
-          <input type="time" value={start} onChange={(event) => setStart(event.target.value)} className="vista-control mt-1 w-full px-2" />
+          <span className="mt-1 block"><TimeInput label="From" value={start} onChange={setStart} className="vista-control px-2" /></span>
         </label>
         <label className="block">
           <span className="vista-field-label">To</span>
-          <input type="time" value={end} onChange={(event) => setEnd(event.target.value)} className="vista-control mt-1 w-full px-2" />
+          <span className="mt-1 block"><TimeInput label="To" value={end} onChange={setEnd} className="vista-control px-2" /></span>
         </label>
         <label className="block">
           <span className="vista-field-label">Work type</span>
