@@ -2,27 +2,24 @@ import { useState } from 'react'
 import { EmptyState, SectionHeading } from '../components/primitives.tsx'
 import { IS_DEMO } from '../lib/mode.ts'
 import { AttendanceTab } from './team/AttendanceTab.tsx'
-import { CoverTab } from './team/CoverTab.tsx'
-import { HistoryTab } from './team/HistoryTab.tsx'
 import { PayrollTab } from './team/PayrollTab.tsx'
 import { RosterTab } from './team/RosterTab.tsx'
 import { StaffTab } from './team/StaffTab.tsx'
 import { TeamSettingsTab } from './team/TeamSettingsTab.tsx'
-import { TimetableTab } from './team/TimetableTab.tsx'
-import { WorkTypesTab } from './team/WorkTypesTab.tsx'
 
-type TabKey = 'roster' | 'cover' | 'attendance' | 'payroll' | 'staff' | 'work-types' | 'timetable' | 'settings' | 'history'
+/*
+ * Kept deliberately small. The Cover, Timetable and History screens still
+ * exist in ./team/ and their routes in the API (the audit trail is still
+ * written); they are just not offered for now. Work types live inside Staff.
+ */
+type TabKey = 'roster' | 'attendance' | 'payroll' | 'staff' | 'settings'
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'roster', label: 'Roster' },
-  { key: 'cover', label: 'Cover' },
   { key: 'attendance', label: 'Hours worked' },
   { key: 'payroll', label: 'Payroll' },
   { key: 'staff', label: 'Staff' },
-  { key: 'work-types', label: 'Work types' },
-  { key: 'timetable', label: 'Timetable' },
   { key: 'settings', label: 'Settings' },
-  { key: 'history', label: 'History' },
 ]
 
 /**
@@ -37,7 +34,7 @@ export function TeamScreen() {
     <div className="space-y-5">
       <SectionHeading
         title="Team"
-        hint="Staff sign in at team.vistahub.my with their name and a 4-digit PIN. Ratings and notes you keep here are never shown to them."
+        hint="Staff sign in at team.vistahub.my with their name and a 4-digit PIN to see their shifts and pay."
       />
 
       {IS_DEMO ? (
@@ -65,14 +62,10 @@ export function TeamScreen() {
           </div>
 
           {tab === 'roster' ? <RosterTab /> : null}
-          {tab === 'cover' ? <CoverTab /> : null}
           {tab === 'attendance' ? <AttendanceTab /> : null}
           {tab === 'payroll' ? <PayrollTab /> : null}
           {tab === 'staff' ? <StaffTab /> : null}
-          {tab === 'work-types' ? <WorkTypesTab /> : null}
-          {tab === 'timetable' ? <TimetableTab /> : null}
           {tab === 'settings' ? <TeamSettingsTab /> : null}
-          {tab === 'history' ? <HistoryTab /> : null}
         </>
       )}
     </div>

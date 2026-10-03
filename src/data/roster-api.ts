@@ -239,7 +239,14 @@ export const rosterApi = {
   saveTemplates: (templates: SlotTemplate[]) => apiRequest('PUT', '/rms/team/slot-templates', { templates }),
 
   weeks: () => apiRequest<{ weeks: WeekSummary[] }>('GET', '/rms/team/weeks'),
-  createWeek: (weekStart: string, fromTemplate: boolean) => apiRequest<WeekDetail>('POST', '/rms/team/weeks', { weekStart, fromTemplate }),
+  createWeek: (weekStart: string, options: { copyFromWeekId?: string | null; fromTemplate?: boolean } = {}) =>
+    apiRequest<WeekDetail>('POST', '/rms/team/weeks', {
+      weekStart,
+      fromTemplate: options.fromTemplate ?? false,
+      copyFromWeekId: options.copyFromWeekId ?? null,
+    }),
+  copyDay: (weekId: string, date: string, fromDate: string) =>
+    apiRequest<WeekDetail>('POST', `/rms/team/weeks/${weekId}/days/${date}/copy-from`, { fromDate }),
   week: (id: string) => apiRequest<WeekDetail>('GET', `/rms/team/weeks/${id}`),
   updateWeek: (id: string, body: Partial<RosterWeek>) => apiRequest<WeekDetail>('PATCH', `/rms/team/weeks/${id}`, body),
   setStatus: (id: string, status: 'DRAFT' | 'APPLICATIONS_OPEN' | 'APPLICATIONS_CLOSED' | 'IN_REVIEW') =>
