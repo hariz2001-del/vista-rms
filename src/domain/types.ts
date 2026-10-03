@@ -178,6 +178,8 @@ export type ExpenseCategory =
   | 'MAINTENANCE'
   | 'CAPITAL_ASSET'
   | 'ICE_GAS'
+  /** Written by paying a payslip in Team → Payroll. Never typed into the expense form. */
+  | 'WAGES'
 
 /** How the money left. Informational: `PaymentSource` is what moves the ledger. */
 export type PaymentMethod = 'CASH' | 'DUITNOW_QR' | 'DEBIT_CARD' | 'BANK_TRANSFER'

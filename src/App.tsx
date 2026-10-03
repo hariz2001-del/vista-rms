@@ -21,6 +21,7 @@ import { OverviewScreen } from './screens/OverviewScreen.tsx'
 import { ReceiptsScreen } from './screens/ReceiptsScreen.tsx'
 import { SettingsScreen } from './screens/SettingsScreen.tsx'
 import { SettlementScreen } from './screens/SettlementScreen.tsx'
+import { TeamScreen } from './screens/TeamScreen.tsx'
 import { SignInScreen } from './screens/SignInScreen.tsx'
 
 /**
@@ -175,6 +176,7 @@ export default function App() {
       {screen === 'expenses' ? <ExpensesScreen store={store} /> : null}
       {screen === 'settlement' ? <SettlementScreen store={store} /> : null}
       {screen === 'menu' ? <MenuScreen store={store} /> : null}
+      {screen === 'team' ? <TeamScreen /> : null}
       {screen === 'settings' ? <SettingsScreen store={store} /> : null}
     </AppShell>
   )

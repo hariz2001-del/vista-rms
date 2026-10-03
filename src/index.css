@@ -187,3 +187,34 @@ main h1 {
   scrollbar-color: #cbd5e1 transparent;
   scrollbar-width: thin;
 }
+
+/* Team → Roster → Export. On screen the card is shown smaller; printed, it is
+   the only thing on an A4 page. */
+.roster-preview {
+  zoom: 0.62;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+  }
+
+  .roster-preview {
+    zoom: 0.66;
+  }
+}

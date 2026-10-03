@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Receipt,
   ReceiptText,
+  Contact,
   Settings as SettingsIcon,
   UtensilsCrossed,
   Users,
@@ -17,10 +18,11 @@ export type ScreenKey =
   | 'expenses'
   | 'settlement'
   | 'menu'
+  | 'team'
   | 'settings'
 
 /**
- * Seven sections, not the predecessor's sprawl. Receipts is the counter's own
+ * Eight sections, not the predecessor's sprawl. Receipts is the counter's own
  * tickets, read-only: it shows what was sold, never a total of its own.
  *
  * That product ended up with five overlapping places to look at money, two of
@@ -41,6 +43,7 @@ export const NAV: Array<{
   { key: 'expenses', label: 'Expenses', mobileLabel: 'Spend', icon: Receipt },
   { key: 'settlement', label: 'Settlement', mobileLabel: 'Owed', icon: Users },
   { key: 'menu', label: 'Menu', mobileLabel: 'Menu', icon: UtensilsCrossed },
+  { key: 'team', label: 'Team', mobileLabel: 'Team', icon: Contact },
   { key: 'settings', label: 'Settings', mobileLabel: 'Setup', icon: SettingsIcon },
 ]
 

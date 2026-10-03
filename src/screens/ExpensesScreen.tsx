@@ -9,9 +9,11 @@ import { formatRinggit } from '../domain/money.ts'
 import { formatDate, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
 import type { ExpenseCategory, PaymentMethod } from '../domain/types.ts'
 
-const CATEGORY_LABEL = Object.fromEntries(
-  CATEGORIES.map((category) => [category.value, category.label]),
-) as Record<ExpenseCategory, string>
+// Wages are not in the form's list: they are written by paying a payslip.
+const CATEGORY_LABEL = {
+  ...Object.fromEntries(CATEGORIES.map((category) => [category.value, category.label])),
+  WAGES: 'Staff wages',
+} as Record<ExpenseCategory, string>
 
 const METHOD_LABEL = Object.fromEntries(
   PAYMENT_METHODS.map((method) => [method.value, method.label]),
