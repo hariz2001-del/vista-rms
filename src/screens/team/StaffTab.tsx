@@ -1,16 +1,9 @@
-import { KeyRound, Lock, UserPlus, X } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, UserPlus, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Badge, EmptyState, Panel } from '../../components/primitives.tsx'
-import {
-  errorText,
-  teamApi,
-  useLoad,
-  type SoloSuitability,
-  type Staff,
-  type StaffAttributes,
-  type WorkType,
-} from '../../data/team-api.ts'
+import { errorText, teamApi, useLoad, type Staff, type WorkType } from '../../data/team-api.ts'
 import { formatRinggit } from '../../domain/money.ts'
+import { WorkTypesTab } from './WorkTypesTab.tsx'
 
 function loadStaffAndTypes() {
   return Promise.all([teamApi.listStaff(), teamApi.listWorkTypes()]).then(([staff, types]) => ({
@@ -19,11 +12,52 @@ function loadStaffAndTypes() {
   }))
 }
 
-function parseTags(text: string): string[] {
-  return [...new Set(text.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
+/**
+ * The PIN behind an eye button. Fetched only when asked for, and each look is
+ * recorded in Team → History. `version` changes when the PIN is reset, so a
+ * shown PIN never goes stale.
+ */
+function PinCell({ staffId, version }: { staffId: string; version: string | null }) {
+  const [shown, setShown] = useState<{ version: string | null; pin: string | null } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const visible = shown && shown.version === version ? shown : null
+
+  async function toggle() {
+    if (visible) {
+      setShown(null)
+      return
+    }
+    setBusy(true)
+    try {
+      const result = await teamApi.viewPin(staffId)
+      setShown({ version, pin: result.pin })
+    } catch {
+      setShown({ version, pin: null })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+      <span className="w-12 font-mono font-bold tracking-[0.2em]">
+        {visible ? (visible.pin ?? <span className="text-[0.65rem] tracking-normal text-muted">reset to see</span>) : '••••'}
+      </span>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-label={visible ? 'Hide PIN' : 'Show PIN'}
+        title={visible ? 'Hide PIN' : 'Show PIN'}
+        className="grid size-8 place-items-center text-muted hover:text-ink"
+      >
+        {visible ? <EyeOff aria-hidden="true" className="size-4" /> : <Eye aria-hidden="true" className="size-4" />}
+      </button>
+    </span>
+  )
 }
 
-/** Shown once: the database keeps only the PIN's hash, so it cannot be looked up later. */
+/** Shown straight after a PIN is created or reset. It can be looked up again from the list. */
 function PinNotice({ name, pin, onClose }: { name: string; pin: string; onClose: () => void }) {
   return (
     <div
@@ -39,11 +73,10 @@ function PinNotice({ name, pin, onClose }: { name: string; pin: string; onClose:
         </h2>
         <p className="mt-3 font-mono text-5xl font-bold tracking-[0.3em]">{pin}</p>
         <p className="mt-3 text-sm text-muted">
-          Give it to {name} now. It is not stored anywhere readable and will not be shown again — if
-          it is lost, reset it.
+          Give it to {name}. You can see it again any time from the staff list (the eye button).
         </p>
         <button type="button" autoFocus onClick={onClose} className="vista-button-primary mt-5 min-h-11 w-full">
-          I have given it to them
+          Done
         </button>
       </div>
     </div>
@@ -54,7 +87,6 @@ function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: 
   const [name, setName] = useState('')
   const [staffCode, setStaffCode] = useState('')
   const [workTypeId, setWorkTypeId] = useState('')
-  const [tags, setTags] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -68,11 +100,9 @@ function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: 
         name: name.trim(),
         staffCode: staffCode.trim() || null,
         defaultWorkTypeId: workTypeId || null,
-        roleTags: parseTags(tags),
       })
       setName('')
       setStaffCode('')
-      setTags('')
       onAdded(result.staff, result.pin)
     } catch (caught) {
       setError(errorText(caught))
@@ -83,7 +113,7 @@ function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: 
 
   return (
     <Panel>
-      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[2fr_1fr_1.4fr_1.4fr_auto] sm:items-end">
+      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[2fr_1fr_1.6fr_auto] sm:items-end">
         <label className="block">
           <span className="vista-field-label">Name</span>
           <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required className="vista-control mt-1 w-full px-3" />
@@ -99,7 +129,7 @@ function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: 
           />
         </label>
         <label className="block">
-          <span className="vista-field-label">Usual work type</span>
+          <span className="vista-field-label">Usual rate</span>
           <select value={workTypeId} onChange={(event) => setWorkTypeId(event.target.value)} className="vista-control mt-1 w-full px-2">
             <option value="">—</option>
             {workTypes.filter((type) => type.isActive).map((type) => (
@@ -109,54 +139,13 @@ function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: 
             ))}
           </select>
         </label>
-        <label className="block">
-          <span className="vista-field-label">Roles (comma-separated)</span>
-          <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="barista, kitchen" className="vista-control mt-1 w-full px-3" />
-        </label>
         <button type="submit" disabled={saving || !name.trim()} className="vista-button-primary flex min-h-11 items-center justify-center gap-2 disabled:opacity-50">
           <UserPlus aria-hidden="true" className="size-4" /> Add staff
         </button>
-        {error ? <p className="text-xs font-bold text-serious sm:col-span-5">{error}</p> : null}
+        {error ? <p className="text-xs font-bold text-serious sm:col-span-4">{error}</p> : null}
       </form>
     </Panel>
   )
-}
-
-const SOLO_LABEL: Record<SoloSuitability, string> = {
-  SUITABLE: 'Fine on their own',
-  CAUTION: 'Use caution on their own',
-  NOT_RECOMMENDED: 'Not recommended on their own',
-}
-
-function ScoreSelect({ label, value, onChange }: { label: string; value: number | null; onChange: (value: number | null) => void }) {
-  return (
-    <label className="block">
-      <span className="vista-field-label">{label}</span>
-      <select
-        value={value ?? ''}
-        onChange={(event) => onChange(event.target.value ? Number(event.target.value) : null)}
-        className="vista-control mt-1 w-full px-2"
-      >
-        <option value="">Not assessed</option>
-        {[1, 2, 3, 4, 5].map((score) => (
-          <option key={score} value={score}>
-            {score} / 5
-          </option>
-        ))}
-      </select>
-    </label>
-  )
-}
-
-const EMPTY_ATTRIBUTES: StaffAttributes = {
-  reliability: null,
-  capability: null,
-  experience: null,
-  soloSuitability: 'SUITABLE',
-  trainingStatus: 'TRAINED',
-  managementPriority: 0,
-  notes: null,
-  extra: {},
 }
 
 function StaffEditor({
@@ -175,8 +164,6 @@ function StaffEditor({
   const [name, setName] = useState(staff.name)
   const [staffCode, setStaffCode] = useState(staff.staffCode)
   const [workTypeId, setWorkTypeId] = useState(staff.defaultWorkTypeId ?? '')
-  const [tags, setTags] = useState(staff.roleTags.join(', '))
-  const [attributes, setAttributes] = useState<StaffAttributes>(staff.attributes ?? EMPTY_ATTRIBUTES)
   const [typedPin, setTypedPin] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -198,24 +185,9 @@ function StaffEditor({
         name: name.trim(),
         staffCode: staffCode.trim(),
         defaultWorkTypeId: workTypeId || null,
-        roleTags: parseTags(tags),
       })
       onChanged(result.staff)
     }, 'Details saved.')
-
-  const saveAttributes = () =>
-    run(async () => {
-      const result = await teamApi.saveAttributes(staff.id, {
-        reliability: attributes.reliability,
-        capability: attributes.capability,
-        experience: attributes.experience,
-        soloSuitability: attributes.soloSuitability,
-        trainingStatus: attributes.trainingStatus,
-        managementPriority: attributes.managementPriority,
-        notes: attributes.notes?.trim() || null,
-      })
-      onChanged(result.staff)
-    }, 'Confidential notes saved.')
 
   const toggleStatus = () =>
     run(async () => {
@@ -231,9 +203,6 @@ function StaffEditor({
       setTypedPin('')
       onPin(result.pin)
     }, 'New PIN set. They have been signed out of every phone.')
-
-  const set = <K extends keyof StaffAttributes>(key: K, value: StaffAttributes[K]) =>
-    setAttributes((current) => ({ ...current, [key]: value }))
 
   return (
     <Panel className="space-y-5 sm:p-6">
@@ -259,7 +228,7 @@ function StaffEditor({
           <input value={staffCode} onChange={(event) => setStaffCode(event.target.value)} maxLength={20} className="vista-control mt-1 w-full px-3 uppercase" />
         </label>
         <label className="block">
-          <span className="vista-field-label">Usual work type</span>
+          <span className="vista-field-label">Usual rate</span>
           <select value={workTypeId} onChange={(event) => setWorkTypeId(event.target.value)} className="vista-control mt-1 w-full px-2">
             <option value="">—</option>
             {workTypes.map((type) => (
@@ -269,84 +238,11 @@ function StaffEditor({
             ))}
           </select>
         </label>
-        <label className="block">
-          <span className="vista-field-label">Roles</span>
-          <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="barista, kitchen" className="vista-control mt-1 w-full px-3" />
-        </label>
         <div className="sm:col-span-2">
           <button type="button" onClick={saveDetails} className="vista-button-primary min-h-11">
             Save details
           </button>
         </div>
-      </section>
-
-      <section className="space-y-3 border border-rail/40 bg-canvas p-4">
-        <div className="flex items-center gap-2">
-          <Lock aria-hidden="true" className="size-4 text-rail" />
-          <h4 className="text-sm font-black uppercase tracking-[0.06em]">Confidential — management only</h4>
-        </div>
-        <p className="text-xs text-muted">
-          Used by the rostering engine as signals, never as rules. Never shown on the staff app, in
-          exports or in anything staff can see.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <ScoreSelect label="Reliability" value={attributes.reliability} onChange={(value) => set('reliability', value)} />
-          <ScoreSelect label="Capability" value={attributes.capability} onChange={(value) => set('capability', value)} />
-          <ScoreSelect label="Experience" value={attributes.experience} onChange={(value) => set('experience', value)} />
-          <label className="block">
-            <span className="vista-field-label">On their own</span>
-            <select
-              value={attributes.soloSuitability}
-              onChange={(event) => set('soloSuitability', event.target.value as SoloSuitability)}
-              className="vista-control mt-1 w-full px-2"
-            >
-              {(Object.keys(SOLO_LABEL) as SoloSuitability[]).map((key) => (
-                <option key={key} value={key}>
-                  {SOLO_LABEL[key]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="vista-field-label">Training</span>
-            <select
-              value={attributes.trainingStatus}
-              onChange={(event) => set('trainingStatus', event.target.value as StaffAttributes['trainingStatus'])}
-              className="vista-control mt-1 w-full px-2"
-            >
-              <option value="TRAINED">Trained</option>
-              <option value="TRAINEE">Trainee</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="vista-field-label">Management priority</span>
-            <select
-              value={attributes.managementPriority}
-              onChange={(event) => set('managementPriority', Number(event.target.value))}
-              className="vista-control mt-1 w-full px-2"
-            >
-              {[2, 1, 0, -1, -2].map((value) => (
-                <option key={value} value={value}>
-                  {value > 0 ? `+${value}` : value}
-                  {value === 0 ? ' (neutral)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <label className="block">
-          <span className="vista-field-label">Notes</span>
-          <textarea
-            value={attributes.notes ?? ''}
-            onChange={(event) => set('notes', event.target.value)}
-            maxLength={2000}
-            rows={3}
-            className="mt-1 w-full border border-line bg-surface p-2 text-sm"
-          />
-        </label>
-        <button type="button" onClick={saveAttributes} className="vista-button-primary min-h-11">
-          Save confidential notes
-        </button>
       </section>
 
       <section className="flex flex-wrap items-end gap-3 border-t border-line pt-4">
@@ -396,7 +292,10 @@ export function StaffTab() {
   if (error && !data) return <p className="text-sm font-bold text-serious">{error}</p>
   if (!data) return <p className="text-sm text-muted">Loading staff…</p>
 
-  const workTypeName = (id: string | null) => data.workTypes.find((type) => type.id === id)?.name ?? '—'
+  const workTypeName = (id: string | null) => {
+    const type = data.workTypes.find((candidate) => candidate.id === id)
+    return type ? `${type.name} · ${formatRinggit(type.rateSenPerHour)}/h` : '—'
+  }
   const selected = data.staff.find((staff) => staff.id === selectedId) ?? null
 
   const replace = (next: Staff) =>
@@ -420,7 +319,7 @@ export function StaffTab() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-line">
-                  {['Name', 'Staff ID', 'Usual work', 'Roles', 'Status'].map((heading) => (
+                  {['Name', 'Staff ID', 'PIN', 'Usual rate', 'Status'].map((heading) => (
                     <th key={heading} className="px-3 py-2 font-mono text-[0.66rem] font-bold uppercase tracking-[0.07em] text-muted">
                       {heading}
                     </th>
@@ -442,8 +341,10 @@ export function StaffTab() {
                       </button>
                     </td>
                     <td className="px-3 py-2.5 font-mono text-xs">{staff.staffCode}</td>
+                    <td className="px-3 py-1">
+                      {staff.hasPin ? <PinCell staffId={staff.id} version={staff.pinSetAt} /> : <span className="text-xs text-muted">—</span>}
+                    </td>
                     <td className="px-3 py-2.5">{workTypeName(staff.defaultWorkTypeId)}</td>
-                    <td className="px-3 py-2.5 text-xs text-muted">{staff.roleTags.join(', ') || '—'}</td>
                     <td className="px-3 py-2.5">
                       {staff.status === 'ACTIVE' ? <Badge tone="good">Active</Badge> : <Badge>Inactive</Badge>}
                     </td>
@@ -459,16 +360,24 @@ export function StaffTab() {
               staff={selected}
               workTypes={data.workTypes}
               onChanged={replace}
-              onPin={(pin) => setShownPin({ name: selected.name, pin })}
+              onPin={(pin) => {
+                setShownPin({ name: selected.name, pin })
+                reload()
+              }}
               onClose={() => setSelectedId(null)}
             />
           ) : (
             <p className="hidden self-start border border-dashed border-line p-6 text-sm text-muted xl:block">
-              Pick someone to edit their details, reset their PIN, or keep confidential notes.
+              Pick someone to edit their details or change their PIN.
             </p>
           )}
         </div>
       )}
+
+      <section className="space-y-3 border-t border-line pt-5">
+        <h3 className="font-display text-lg font-bold">Pay rates</h3>
+        <WorkTypesTab />
+      </section>
 
       {shownPin ? <PinNotice name={shownPin.name} pin={shownPin.pin} onClose={() => setShownPin(null)} /> : null}
     </div>

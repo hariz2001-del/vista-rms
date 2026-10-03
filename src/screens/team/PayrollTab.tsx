@@ -120,7 +120,7 @@ function Payslip({ staffId, period, onChanged }: { staffId: string; period: { st
       ) : null}
       {data.pendingCount > 0 ? (
         <p className="text-xs font-bold text-warning">
-          {data.pendingCount} clock-in{data.pendingCount === 1 ? '' : 's'} in this period still waiting for approval (Attendance tab) — not included.
+          {data.pendingCount} clock-in{data.pendingCount === 1 ? '' : 's'} in this period still waiting for approval — not included.
         </p>
       ) : null}
       {problem ? <p role="alert" className="text-sm font-bold text-critical">{problem}</p> : null}
@@ -212,7 +212,7 @@ function Summary({ period, onPick, picked }: { period: { start: string; end: str
   const { data, error, reload } = useLoad(() => payrollApi.summary(period.start, period.end))
   if (error && !data) return <p className="text-sm font-bold text-serious">{error}</p>
   if (!data) return <p className="text-sm text-muted">Working out pay…</p>
-  if (data.rows.length === 0) return <EmptyState title="No approved time in this period" hint="Approve clock-ins in the Attendance tab first." />
+  if (data.rows.length === 0) return <EmptyState title="No approved time in this period" hint="Confirm the hours worked in step 1 first." />
 
   const types = [...new Set(data.rows.flatMap((row) => Object.keys(row.minutesByType)))].toSorted()
   const total = data.rows.reduce((sum, row) => sum + row.totalSen, 0)

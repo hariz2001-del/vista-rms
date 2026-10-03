@@ -49,7 +49,6 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 
 function SettingsForm({ initial }: { initial: TeamSettings }) {
   const [draft, setDraft] = useState(initial)
-  const [maxHours, setMaxHours] = useState(String(initial.assignmentMaxMinutes / 60))
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const set = <K extends keyof TeamSettings>(key: K, value: TeamSettings[K]) =>
@@ -58,20 +57,14 @@ function SettingsForm({ initial }: { initial: TeamSettings }) {
   async function save() {
     setMessage(null)
     setError(null)
-    const hours = Number(maxHours)
-    if (!Number.isFinite(hours) || hours < 0) {
-      setError('Enter the weekly hour cap as a number, like 45 or 37.5.')
-      return
-    }
     try {
       const { engineWeights: _weights, ...rest } = draft
       const result = await teamApi.saveSettings({
         ...rest,
-        assignmentMaxMinutes: Math.round(hours * 60),
         orgCode: draft.orgCode?.trim() ? draft.orgCode.trim().toUpperCase() : null,
       })
       setDraft(result.settings)
-      setMessage('Saved. Weeks already created keep the rules they were created with.')
+      setMessage('Saved.')
     } catch (caught) {
       setError(errorText(caught))
     }
@@ -96,31 +89,14 @@ function SettingsForm({ initial }: { initial: TeamSettings }) {
         </label>
       </Group>
 
-      <Group title="Applications and rostering">
-        <NumberField label="Shifts a person may apply for" suffix="per week" value={draft.applicationLimit} max={100} onChange={(value) => set('applicationLimit', value)} />
-        <NumberField label="Usual shifts given" suffix="per week" value={draft.assignmentTargetShifts} max={50} onChange={(value) => set('assignmentTargetShifts', value)} />
-        <NumberField label="Most shifts given" suffix="per week" value={draft.assignmentMaxShifts} max={50} onChange={(value) => set('assignmentMaxShifts', value)} />
-        <label className="block">
-          <span className="vista-field-label">Most hours given</span>
-          <span className="mt-1 flex items-center gap-2">
-            <input value={maxHours} onChange={(event) => setMaxHours(event.target.value)} inputMode="decimal" className="vista-control w-24 px-2 tabular" />
-            <span className="text-sm text-muted">hours per week</span>
-          </span>
-        </label>
+      <Group title="Roster">
         <NumberField
           label="Staff can pull out until"
           suffix="hours before the shift"
           value={draft.withdrawalDeadlineHours}
           max={336}
           onChange={(value) => set('withdrawalDeadlineHours', value)}
-          hint="After this, only management can take them off."
-        />
-        <NumberField
-          label="Urgent cover when within"
-          suffix="hours of the start"
-          value={draft.urgentCoverageHours}
-          max={336}
-          onChange={(value) => set('urgentCoverageHours', value)}
+          hint="After this, only you can take them off."
         />
       </Group>
 

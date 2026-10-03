@@ -155,6 +155,17 @@ export type Attendance = {
   flags: string[]
 }
 
+export type UnconfirmedShift = {
+  assignmentId: string
+  staffId: string
+  staffName: string
+  date: string
+  startTime: string
+  endTime: string
+  minutes: number
+  label: string | null
+}
+
 export type PayPeriod = { start: string; end: string; label: string; payday: string }
 
 export type PayrollRow = {
@@ -228,7 +239,14 @@ export const rosterApi = {
   saveTemplates: (templates: SlotTemplate[]) => apiRequest('PUT', '/rms/team/slot-templates', { templates }),
 
   weeks: () => apiRequest<{ weeks: WeekSummary[] }>('GET', '/rms/team/weeks'),
-  createWeek: (weekStart: string, fromTemplate: boolean) => apiRequest<WeekDetail>('POST', '/rms/team/weeks', { weekStart, fromTemplate }),
+  createWeek: (weekStart: string, options: { copyFromWeekId?: string | null; fromTemplate?: boolean } = {}) =>
+    apiRequest<WeekDetail>('POST', '/rms/team/weeks', {
+      weekStart,
+      fromTemplate: options.fromTemplate ?? false,
+      copyFromWeekId: options.copyFromWeekId ?? null,
+    }),
+  copyDay: (weekId: string, date: string, fromDate: string) =>
+    apiRequest<WeekDetail>('POST', `/rms/team/weeks/${weekId}/days/${date}/copy-from`, { fromDate }),
   week: (id: string) => apiRequest<WeekDetail>('GET', `/rms/team/weeks/${id}`),
   updateWeek: (id: string, body: Partial<RosterWeek>) => apiRequest<WeekDetail>('PATCH', `/rms/team/weeks/${id}`, body),
   setStatus: (id: string, status: 'DRAFT' | 'APPLICATIONS_OPEN' | 'APPLICATIONS_CLOSED' | 'IN_REVIEW') =>
@@ -263,6 +281,10 @@ export const rosterApi = {
 export const payrollApi = {
   attendance: (start: string, end: string, status?: string) =>
     apiRequest<{ attendance: Attendance[] }>('GET', `/rms/team/attendance?start=${start}&end=${end}${status ? `&status=${status}` : ''}`),
+  unconfirmed: (start: string, end: string) =>
+    apiRequest<{ shifts: UnconfirmedShift[] }>('GET', `/rms/team/attendance/unconfirmed?start=${start}&end=${end}`),
+  confirmWorked: (assignmentIds: string[]) =>
+    apiRequest<{ confirmed: number }>('POST', '/rms/team/attendance/from-roster', { assignmentIds }),
   addAttendance: (body: { staffId: string; startAt: string; endAt: string; workTypeId?: string | null; note?: string | null }) =>
     apiRequest('POST', '/rms/team/attendance', body),
   editAttendance: (

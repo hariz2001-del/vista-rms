@@ -191,6 +191,68 @@ function ManualEntry({ staff, workTypes, onAdded }: { staff: Staff[]; workTypes:
   )
 }
 
+/** Finished rostered shifts nobody has confirmed yet. One tap each, or all at once. */
+function ToConfirm({ start, end, onDone }: { start: string; end: string; onDone: () => void }) {
+  const { data, reload } = useLoad(() => payrollApi.unconfirmed(start, end))
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const shifts = data?.shifts ?? []
+  if (shifts.length === 0) return null
+
+  async function confirm(ids: string[]) {
+    setBusy(true)
+    setProblem(null)
+    try {
+      await payrollApi.confirmWorked(ids)
+      reload()
+      onDone()
+    } catch (caught) {
+      setProblem(errorText(caught))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Panel className="space-y-3 border-warning/60">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-black uppercase tracking-[0.06em]">
+          {shifts.length} finished shift{shifts.length === 1 ? '' : 's'} to confirm
+        </h3>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => confirm(shifts.map((shift) => shift.assignmentId))}
+          className="vista-button-primary ml-auto flex min-h-11 items-center gap-1 disabled:opacity-50"
+        >
+          <Check aria-hidden="true" className="size-4" /> Mark all as worked
+        </button>
+      </div>
+      <ul className="divide-y divide-line text-sm">
+        {shifts.map((shift) => (
+          <li key={shift.assignmentId} className="flex flex-wrap items-center gap-3 py-2">
+            <span className="min-w-24 font-bold">{shift.staffName}</span>
+            <span>{dayName(shift.date)}</span>
+            <span className="tabular">
+              {timeText(shift.startTime)}–{timeText(shift.endTime)} · {hoursText(shift.minutes)}
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => confirm([shift.assignmentId])}
+              className="vista-button-secondary ml-auto min-h-10 disabled:opacity-50"
+            >
+              Worked
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted">Didn’t work it, or different times? Confirm it, then use Edit times or Reject below.</p>
+      {problem ? <p className="text-xs font-bold text-critical">{problem}</p> : null}
+    </Panel>
+  )
+}
+
 export function AttendanceTab() {
   const [start, setStart] = useState(mondayOf(todayInKl()))
   const [status, setStatus] = useState('')
@@ -222,10 +284,11 @@ export function AttendanceTab() {
   return (
     <div className="space-y-4">
       <p className="max-w-[70ch] text-sm text-muted">
-        Staff clock in and out on team.vistahub.my. A clock-in is only a claim: nothing is paid until you approve the
-        times here. Approving after payroll is paid never changes the paid amount — any difference shows in Payroll as
-        an adjustment.
+        Payroll pays only hours confirmed here. After each shift, confirm the rostered people worked it — adjust the
+        times if someone came late or left early. Changing hours after payroll is paid never changes the paid amount;
+        the difference shows in Payroll as an adjustment.
       </p>
+      <ToConfirm key={start} start={start} end={end} onDone={reload} />
       <div className="flex flex-wrap items-end gap-2">
         <button type="button" onClick={() => shift(-7)} className="vista-button-secondary min-h-11">
           ← Earlier
@@ -260,7 +323,7 @@ export function AttendanceTab() {
       {problem ? <p role="alert" className="bg-red-50 p-3 text-sm font-bold text-critical">{problem}</p> : null}
       {error && !data ? <p className="text-sm font-bold text-serious">{error}</p> : null}
       {!data ? <p className="text-sm text-muted">Loading attendance…</p> : null}
-      {data && data.attendance.length === 0 ? <EmptyState title="No clock-ins this week" /> : null}
+      {data && data.attendance.length === 0 ? <EmptyState title="No hours confirmed this week yet" /> : null}
 
       {data && data.attendance.length > 0 ? (
         <ul className="space-y-2">
