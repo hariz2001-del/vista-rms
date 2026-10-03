@@ -253,6 +253,8 @@ export const rosterApi = {
     apiRequest<WeekDetail>('POST', `/rms/team/weeks/${id}/status`, { status }),
   generate: (id: string) => apiRequest<WeekDetail>('POST', `/rms/team/weeks/${id}/generate`),
   publish: (id: string) => apiRequest<WeekDetail>('POST', `/rms/team/weeks/${id}/publish`),
+  fillFromPicks: (id: string) =>
+    apiRequest<{ added: number; leftOver: number; detail: WeekDetail }>('POST', `/rms/team/weeks/${id}/fill-from-picks`),
   deleteWeek: (id: string) => apiRequest('DELETE', `/rms/team/weeks/${id}`),
   exportWeek: (id: string) => apiRequest<RosterExport>('GET', `/rms/team/weeks/${id}/export`),
 
