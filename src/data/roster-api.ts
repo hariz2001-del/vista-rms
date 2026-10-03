@@ -155,6 +155,17 @@ export type Attendance = {
   flags: string[]
 }
 
+export type UnconfirmedShift = {
+  assignmentId: string
+  staffId: string
+  staffName: string
+  date: string
+  startTime: string
+  endTime: string
+  minutes: number
+  label: string | null
+}
+
 export type PayPeriod = { start: string; end: string; label: string; payday: string }
 
 export type PayrollRow = {
@@ -263,6 +274,10 @@ export const rosterApi = {
 export const payrollApi = {
   attendance: (start: string, end: string, status?: string) =>
     apiRequest<{ attendance: Attendance[] }>('GET', `/rms/team/attendance?start=${start}&end=${end}${status ? `&status=${status}` : ''}`),
+  unconfirmed: (start: string, end: string) =>
+    apiRequest<{ shifts: UnconfirmedShift[] }>('GET', `/rms/team/attendance/unconfirmed?start=${start}&end=${end}`),
+  confirmWorked: (assignmentIds: string[]) =>
+    apiRequest<{ confirmed: number }>('POST', '/rms/team/attendance/from-roster', { assignmentIds }),
   addAttendance: (body: { staffId: string; startAt: string; endAt: string; workTypeId?: string | null; note?: string | null }) =>
     apiRequest('POST', '/rms/team/attendance', body),
   editAttendance: (

@@ -16,7 +16,7 @@ type TabKey = 'roster' | 'cover' | 'attendance' | 'payroll' | 'staff' | 'work-ty
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'roster', label: 'Roster' },
   { key: 'cover', label: 'Cover' },
-  { key: 'attendance', label: 'Attendance' },
+  { key: 'attendance', label: 'Hours worked' },
   { key: 'payroll', label: 'Payroll' },
   { key: 'staff', label: 'Staff' },
   { key: 'work-types', label: 'Work types' },

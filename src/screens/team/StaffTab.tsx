@@ -1,4 +1,4 @@
-import { KeyRound, Lock, UserPlus, X } from 'lucide-react'
+import { Eye, EyeOff, KeyRound, Lock, UserPlus, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Badge, EmptyState, Panel } from '../../components/primitives.tsx'
 import {
@@ -23,7 +23,52 @@ function parseTags(text: string): string[] {
   return [...new Set(text.split(',').map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
 }
 
-/** Shown once: the database keeps only the PIN's hash, so it cannot be looked up later. */
+/**
+ * The PIN behind an eye button. Fetched only when asked for, and each look is
+ * recorded in Team → History. `version` changes when the PIN is reset, so a
+ * shown PIN never goes stale.
+ */
+function PinCell({ staffId, version }: { staffId: string; version: string | null }) {
+  const [shown, setShown] = useState<{ version: string | null; pin: string | null } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const visible = shown && shown.version === version ? shown : null
+
+  async function toggle() {
+    if (visible) {
+      setShown(null)
+      return
+    }
+    setBusy(true)
+    try {
+      const result = await teamApi.viewPin(staffId)
+      setShown({ version, pin: result.pin })
+    } catch {
+      setShown({ version, pin: null })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
+      <span className="w-12 font-mono font-bold tracking-[0.2em]">
+        {visible ? (visible.pin ?? <span className="text-[0.65rem] tracking-normal text-muted">reset to see</span>) : '••••'}
+      </span>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-label={visible ? 'Hide PIN' : 'Show PIN'}
+        title={visible ? 'Hide PIN' : 'Show PIN'}
+        className="grid size-8 place-items-center text-muted hover:text-ink"
+      >
+        {visible ? <EyeOff aria-hidden="true" className="size-4" /> : <Eye aria-hidden="true" className="size-4" />}
+      </button>
+    </span>
+  )
+}
+
+/** Shown straight after a PIN is created or reset. It can be looked up again from the list. */
 function PinNotice({ name, pin, onClose }: { name: string; pin: string; onClose: () => void }) {
   return (
     <div
@@ -39,11 +84,10 @@ function PinNotice({ name, pin, onClose }: { name: string; pin: string; onClose:
         </h2>
         <p className="mt-3 font-mono text-5xl font-bold tracking-[0.3em]">{pin}</p>
         <p className="mt-3 text-sm text-muted">
-          Give it to {name} now. It is not stored anywhere readable and will not be shown again — if
-          it is lost, reset it.
+          Give it to {name}. You can see it again any time from the staff list (the eye button).
         </p>
         <button type="button" autoFocus onClick={onClose} className="vista-button-primary mt-5 min-h-11 w-full">
-          I have given it to them
+          Done
         </button>
       </div>
     </div>
@@ -420,7 +464,7 @@ export function StaffTab() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-line">
-                  {['Name', 'Staff ID', 'Usual work', 'Roles', 'Status'].map((heading) => (
+                  {['Name', 'Staff ID', 'PIN', 'Usual work', 'Roles', 'Status'].map((heading) => (
                     <th key={heading} className="px-3 py-2 font-mono text-[0.66rem] font-bold uppercase tracking-[0.07em] text-muted">
                       {heading}
                     </th>
@@ -442,6 +486,9 @@ export function StaffTab() {
                       </button>
                     </td>
                     <td className="px-3 py-2.5 font-mono text-xs">{staff.staffCode}</td>
+                    <td className="px-3 py-1">
+                      {staff.hasPin ? <PinCell staffId={staff.id} version={staff.pinSetAt} /> : <span className="text-xs text-muted">—</span>}
+                    </td>
                     <td className="px-3 py-2.5">{workTypeName(staff.defaultWorkTypeId)}</td>
                     <td className="px-3 py-2.5 text-xs text-muted">{staff.roleTags.join(', ') || '—'}</td>
                     <td className="px-3 py-2.5">
@@ -459,7 +506,10 @@ export function StaffTab() {
               staff={selected}
               workTypes={data.workTypes}
               onChanged={replace}
-              onPin={(pin) => setShownPin({ name: selected.name, pin })}
+              onPin={(pin) => {
+                setShownPin({ name: selected.name, pin })
+                reload()
+              }}
               onClose={() => setSelectedId(null)}
             />
           ) : (
