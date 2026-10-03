@@ -44,7 +44,7 @@ export function TeamScreen() {
     <div className="space-y-5">
       <SectionHeading
         title="Team"
-        hint="Staff sign in at team.vistahub.my with their 4-digit PIN to pick shifts and see their roster and pay."
+        hint="Staff sign in at team.vistahub.my with their 4-digit PIN to apply for shifts and see their roster and pay."
       />
 
       {IS_DEMO ? (
