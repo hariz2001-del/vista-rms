@@ -22,8 +22,9 @@ import { RosterShare } from './RosterShare.tsx'
 /**
  * The roster, kept simple: make a week (empty, or a copy of an earlier one),
  * add or edit shifts — or copy a whole day's shifts from another day — let
- * staff pick the shifts they can work in the Team app, give the shifts out
- * from those picks (or by hand), publish, and export for the group chat.
+ * open it for applications so staff apply for the shifts they can work in the
+ * Team app, give the shifts out from those applications (or by hand), publish,
+ * and export for the group chat.
  *
  * The suggested-roster engine and the fairness view still exist in the API;
  * they are simply not offered here for now.
@@ -227,11 +228,11 @@ function SlotCard({
   const active = slot.assignments.filter((assignment) => assignment.status === 'ACTIVE')
   const choices = detail.staff.filter((staff) => staff.status === 'ACTIVE' && !active.some((assignment) => assignment.staffId === staff.id))
   const clashes = detail.warnings.filter((warning) => warning.slotId === slot.id && warning.kind === 'OVERLAP')
-  // Who picked this shift in the Team app and is not on it yet, first pick first.
-  const picks = slot.applicants
-    .filter((pick) => !active.some((assignment) => assignment.staffId === pick.staffId))
+  // Who applied for this shift in the Team app and is not on it yet, first to apply first.
+  const applied = slot.applicants
     .toSorted((a, b) => a.appliedAt.localeCompare(b.appliedAt))
-    .flatMap((pick) => detail.staff.filter((staff) => staff.id === pick.staffId && staff.status === 'ACTIVE'))
+    .flatMap((application) => choices.filter((staff) => staff.id === application.staffId))
+  const others = choices.filter((staff) => !applied.includes(staff))
 
   async function run(action: () => Promise<WeekDetail>) {
     try {
@@ -350,26 +351,10 @@ function SlotCard({
         ))}
       </ul>
 
-      {picks.length > 0 ? (
-        <div className="mt-2 border-t border-dashed border-line pt-2">
-          <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted">Picked by</p>
-          <ul className="mt-1 space-y-1">
-            {picks.map((staff) => (
-              <li key={staff.id} className="flex items-center gap-1 text-sm">
-                <span className="min-w-0 flex-1 truncate">{staff.name}</span>
-                <button
-                  type="button"
-                  onClick={() => void assign(staff.id)}
-                  aria-label={`Give this shift to ${staff.name}`}
-                  className="flex min-h-7 items-center gap-1 bg-rail px-2 text-xs font-bold text-white hover:opacity-90"
-                >
-                  <Check aria-hidden="true" className="size-3.5" /> Give
-                </button>
-              </li>
-            ))}
-          </ul>
-          {!short ? <p className="mt-1 text-[0.7rem] text-muted">This shift is already full.</p> : null}
-        </div>
+      {applied.length > 0 ? (
+        <p className="mt-2 text-xs">
+          <span className="font-bold text-rail">Applied:</span> {applied.map((staff) => staff.name).join(', ')}
+        </p>
       ) : null}
 
       {choices.length > 0 ? (
@@ -377,14 +362,35 @@ function SlotCard({
           value=""
           onChange={(event) => void assign(event.target.value)}
           aria-label="Add someone to this shift"
-          className="vista-control mt-2 w-full px-2 text-xs"
+          className={`vista-control mt-2 w-full px-2 text-xs ${applied.length > 0 ? 'border-rail font-bold' : ''}`}
         >
-          <option value="">+ Add someone…</option>
-          {choices.map((staff) => (
-            <option key={staff.id} value={staff.id}>
-              {staff.name}
-            </option>
-          ))}
+          <option value="">{applied.length > 0 ? `+ Add someone… (${applied.length} applied)` : '+ Add someone…'}</option>
+          {applied.length > 0 ? (
+            <>
+              <optgroup label="Applied for this shift">
+                {applied.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    ✓ {staff.name}
+                  </option>
+                ))}
+              </optgroup>
+              {others.length > 0 ? (
+                <optgroup label="Did not apply">
+                  {others.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </>
+          ) : (
+            others.map((staff) => (
+              <option key={staff.id} value={staff.id}>
+                {staff.name}
+              </option>
+            ))
+          )}
         </select>
       ) : null}
 
@@ -470,6 +476,70 @@ function DayColumn({
   )
 }
 
+/**
+ * Who applied for what: one row per person — how many shifts they applied
+ * for, how many they have been given, and which ones (ticked when given).
+ */
+function ApplicationsSummary({ detail }: { detail: WeekDetail }) {
+  const rows = detail.staff
+    .filter((staff) => staff.status === 'ACTIVE')
+    .map((staff) => {
+      const appliedSlots = detail.slots.filter((slot) => slot.applicants.some((application) => application.staffId === staff.id))
+      const onShift = (slot: RosterSlot) =>
+        slot.assignments.some((assignment) => assignment.staffId === staff.id && assignment.status === 'ACTIVE')
+      return { staff, appliedSlots, onShift, given: detail.slots.filter(onShift).length }
+    })
+    .toSorted((a, b) => b.appliedSlots.length - a.appliedSlots.length || a.staff.name.localeCompare(b.staff.name))
+  if (!rows.some((row) => row.appliedSlots.length > 0) && detail.week.status !== 'APPLICATIONS_OPEN') return null
+
+  return (
+    <section className="border border-line bg-surface">
+      <h4 className="border-b border-line px-3 py-2 font-display text-lg font-bold">Applications</h4>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-line text-left text-xs uppercase tracking-wider text-muted">
+              <th className="px-3 py-2">Staff</th>
+              <th className="px-3 py-2 text-right">Applied</th>
+              <th className="px-3 py-2 text-right">Given</th>
+              <th className="px-3 py-2">Shifts applied for</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ staff, appliedSlots, onShift, given }) => (
+              <tr key={staff.id} className="border-b border-line align-top last:border-b-0">
+                <td className="whitespace-nowrap px-3 py-2 font-bold">{staff.name}</td>
+                <td className="px-3 py-2 text-right font-mono">{appliedSlots.length}</td>
+                <td className="px-3 py-2 text-right font-mono">{given}</td>
+                <td className="px-3 py-2">
+                  {appliedSlots.length === 0 ? (
+                    <span className="text-xs text-muted">Has not applied</span>
+                  ) : (
+                    <ul className="flex flex-wrap gap-1">
+                      {appliedSlots.map((slot) => (
+                        <li
+                          key={slot.id}
+                          className={`flex items-center gap-1 whitespace-nowrap px-2 py-0.5 text-xs ${onShift(slot) ? 'bg-green-100 font-bold text-good' : 'bg-canvas'}`}
+                        >
+                          {onShift(slot) ? <Check aria-hidden="true" className="size-3" /> : null}
+                          {dayName(slot.date)} · {timeText(slot.startTime)}–{timeText(slot.endTime)}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="border-t border-line px-3 py-2 text-xs text-muted">
+        <Check aria-hidden="true" className="inline size-3 text-good" /> green = given that shift.
+      </p>
+    </section>
+  )
+}
+
 function WeekView({
   weekId,
   workTypes,
@@ -507,21 +577,23 @@ function WeekView({
 
   const published = data.week.status === 'PUBLISHED'
   const picking = data.week.status === 'APPLICATIONS_OPEN'
-  const pickers = new Set(data.slots.flatMap((slot) => slot.applicants.map((pick) => pick.staffId))).size
-  // Picks not yet turned into a place on the shift.
+  const pickers = new Set(data.slots.flatMap((slot) => slot.applicants.map((application) => application.staffId))).size
+  // Applications not yet turned into a place on the shift.
   const waitingPicks = data.slots.reduce(
     (sum, slot) =>
       sum +
-      slot.applicants.filter((pick) => !slot.assignments.some((assignment) => assignment.status === 'ACTIVE' && assignment.staffId === pick.staffId)).length,
+      slot.applicants.filter(
+        (application) => !slot.assignments.some((assignment) => assignment.status === 'ACTIVE' && assignment.staffId === application.staffId),
+      ).length,
     0,
   )
   const stageText = published
     ? 'Published — staff can see their shifts'
     : picking
-      ? 'Staff are picking shifts in the Team app'
+      ? 'Open for applications — staff apply in the Team app'
       : data.week.status === 'DRAFT'
         ? 'Draft — staff cannot see it yet'
-        : 'Picking closed — staff cannot see the roster yet'
+        : 'Applications closed — staff cannot see the roster yet'
 
   async function giveFromPicks() {
     setBusy(true)
@@ -531,10 +603,10 @@ function WeekView({
       update(result.detail)
       setMessage(
         result.added === 0 && result.leftOver === 0
-          ? 'Nothing to give — no new picks.'
+          ? 'Nothing to give — no new applications.'
           : `Gave out ${result.added} shift${result.added === 1 ? '' : 's'}.` +
               (result.leftOver > 0
-                ? ` ${result.leftOver} pick${result.leftOver === 1 ? '' : 's'} did not fit (shift full, or they already work then) — still listed under “Picked by”.`
+                ? ` ${result.leftOver} application${result.leftOver === 1 ? '' : 's'} did not fit (shift full, or they already work then) — see the summary below.`
                 : ''),
       )
     } catch (caught) {
@@ -572,7 +644,7 @@ function WeekView({
                   onClick={() => act(() => rosterApi.setStatus(data.week.id, 'APPLICATIONS_CLOSED'))}
                   className="vista-button-secondary min-h-11 disabled:opacity-50"
                 >
-                  Stop picking
+                  Close applications
                 </button>
               ) : (
                 <button
@@ -580,19 +652,19 @@ function WeekView({
                   disabled={busy}
                   onClick={() => {
                     if (data.slots.length === 0) {
-                      setMessage('Add the week’s shifts first, then let staff pick.')
+                      setMessage('Add the week’s shifts first, then open it for applications.')
                       return
                     }
                     void act(() => rosterApi.setStatus(data.week.id, 'APPLICATIONS_OPEN'))
                   }}
                   className="vista-button-secondary min-h-11 disabled:opacity-50"
                 >
-                  Let staff pick shifts
+                  Open for applications
                 </button>
               )}
               {waitingPicks > 0 ? (
                 <button type="button" disabled={busy} onClick={() => void giveFromPicks()} className="vista-button-secondary min-h-11 disabled:opacity-50">
-                  Give shifts to who picked
+                  Give shifts to applicants
                 </button>
               ) : null}
             <button
@@ -648,11 +720,12 @@ function WeekView({
 
       {picking ? (
         <p className="bg-rail-soft p-3 text-sm">
-          <strong>Staff can now pick shifts</strong> at team.vistahub.my.{' '}
+          <strong>Open for applications.</strong> Staff apply for shifts at team.vistahub.my.{' '}
           {pickers === 0
-            ? 'Nobody has picked yet.'
-            : `${pickers} ${pickers === 1 ? 'person has' : 'people have'} picked. Their names show on each shift under “Picked by”.`}{' '}
-          When you are ready, press <strong>Give shifts to who picked</strong> (or tap Give on a name), check the roster, then <strong>Publish</strong>.
+            ? 'Nobody has applied yet.'
+            : `${pickers} ${pickers === 1 ? 'person has' : 'people have'} applied — see each shift’s dropdown, and the summary below.`}{' '}
+          When you are ready, press <strong>Give shifts to applicants</strong> (or choose people from each shift’s dropdown), check the roster, then{' '}
+          <strong>Publish to staff</strong> to confirm it.
         </p>
       ) : null}
 
@@ -667,6 +740,8 @@ function WeekView({
           <DayColumn key={date} date={date} detail={data} workTypes={workTypes} onDetail={update} onError={setMessage} />
         ))}
       </div>
+
+      <ApplicationsSummary detail={data} />
 
       {sharing ? <RosterShare weekId={data.week.id} onClose={() => setSharing(false)} /> : null}
     </div>
@@ -706,7 +781,7 @@ export function RosterTab() {
               >
                 <span className="block text-sm font-bold">{week.label}</span>
                 <span className="block text-xs text-muted">
-                  {week.status === 'PUBLISHED' ? 'Published' : week.status === 'APPLICATIONS_OPEN' ? 'Staff picking' : 'Draft'} · {week.filled}/{week.seats} filled
+                  {week.status === 'PUBLISHED' ? 'Published' : week.status === 'APPLICATIONS_OPEN' ? 'Open for applications' : 'Draft'} · {week.filled}/{week.seats} filled
                 </span>
               </button>
             </li>
