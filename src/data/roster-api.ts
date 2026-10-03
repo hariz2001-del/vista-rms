@@ -75,7 +75,7 @@ export type RosterSlot = {
   label: string | null
   applicants: Array<{ staffId: string; appliedAt: string }>
   assignments: RosterAssignment[]
-  openCoverage: { id: string; isUrgent: boolean } | null
+  openCoverage: { id: string; isUrgent: boolean; vacatedBy: string | null; askingName: string | null } | null
 }
 
 export type RosterWarning = { kind: string; slotId: string | null; staffId: string | null; message: string }

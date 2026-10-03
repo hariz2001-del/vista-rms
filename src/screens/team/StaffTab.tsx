@@ -142,7 +142,7 @@ function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: 
           </select>
         </label>
         <button type="submit" disabled={saving || !name.trim()} className="vista-button-primary flex min-h-11 items-center justify-center gap-2 disabled:opacity-50">
-          <UserPlus aria-hidden="true" className="size-4" /> Add staff
+          <UserPlus aria-hidden="true" className="size-4" /> {saving ? 'Adding…' : 'Add staff'}
         </button>
         {noRates ? (
           <p className="text-xs font-bold text-warning sm:col-span-4">

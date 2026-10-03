@@ -32,7 +32,10 @@ function NewWeek({ existing, onCreated }: { existing: WeekSummary[]; onCreated: 
   const taken = new Set(existing.map((week) => week.weekStart))
   const options = Array.from({ length: 8 }, (_, index) => addDaysTo(mondayOf(todayInKl()), 7 * index)).filter((monday) => !taken.has(monday))
   const latest = existing[0] ?? null
-  const [weekStart, setWeekStart] = useState(options[0] ?? '')
+  // Monday or Tuesday: this week is still worth planning. Later: next week.
+  const weekday = (new Date(`${todayInKl()}T00:00:00Z`).getUTCDay() + 6) % 7
+  const wanted = addDaysTo(mondayOf(todayInKl()), weekday <= 1 ? 0 : 7)
+  const [weekStart, setWeekStart] = useState(options.find((monday) => monday >= wanted) ?? options[0] ?? '')
   const [copyFrom, setCopyFrom] = useState(latest?.id ?? '')
   const [error, setError] = useState<string | null>(null)
 
@@ -262,20 +265,20 @@ function SlotCard({
   const short = active.length < slot.requiredStaff
   return (
     <article className={`border bg-surface p-3 ${slot.openCoverage?.isUrgent ? 'border-critical' : short ? 'border-warning/60' : 'border-line'}`}>
-      <div className="flex items-start gap-1">
-        <button type="button" onClick={() => setEditingShift(true)} title="Edit this shift" className="min-w-0 text-left">
-          <span className="block font-bold hover:underline">
-            {timeText(slot.startTime)}–{timeText(slot.endTime)}
-          </span>
-          <span className="block text-xs text-muted">
-            {hoursText(slot.minutes)} · {active.length}/{slot.requiredStaff} people
-            {slot.label ? ` · ${slot.label}` : ''}
-          </span>
-        </button>
+      <button type="button" onClick={() => setEditingShift(true)} title="Edit this shift" className="block w-full text-left">
+        <span className="block whitespace-nowrap font-bold hover:underline">
+          {timeText(slot.startTime)}–{timeText(slot.endTime)}
+        </span>
+        <span className="block text-xs text-muted">
+          {hoursText(slot.minutes)} · {active.length} of {slot.requiredStaff} {slot.requiredStaff === 1 ? 'person' : 'people'}
+          {slot.label ? ` · ${slot.label}` : ''}
+        </span>
+      </button>
+      <div className="mt-2 flex items-center gap-1">
         <button
           type="button"
           onClick={() => setEditingShift(true)}
-          className="ml-auto flex min-h-8 shrink-0 items-center gap-1 border border-line px-2 text-xs font-bold text-ink hover:bg-canvas"
+          className="flex min-h-8 items-center gap-1 border border-line px-2 text-xs font-bold text-ink hover:bg-canvas"
         >
           <Pencil aria-hidden="true" className="size-3.5" /> Edit
         </button>
@@ -286,7 +289,7 @@ function SlotCard({
           onClick={() => {
             if (window.confirm('Delete this shift?')) void run(() => rosterApi.removeSlot(slot.id))
           }}
-          className="grid size-8 shrink-0 place-items-center text-muted hover:text-critical"
+          className="ml-auto grid size-8 shrink-0 place-items-center text-muted hover:text-critical"
         >
           <Trash2 aria-hidden="true" className="size-4" />
         </button>
@@ -294,7 +297,10 @@ function SlotCard({
 
       {slot.openCoverage ? (
         <p className={`mt-2 px-2 py-1 text-xs font-bold ${slot.openCoverage.isUrgent ? 'bg-red-100 text-critical' : 'bg-amber-100 text-warning'}`}>
-          Someone can’t make it — the app is asking others. Or add someone below.
+          {slot.openCoverage.vacatedBy ?? 'Someone'} can’t make it.{' '}
+          {slot.openCoverage.askingName
+            ? `Asking ${slot.openCoverage.askingName} in the app — or add someone below.`
+            : 'Nobody else is free to ask — add someone below.'}
         </p>
       ) : null}
 
@@ -581,6 +587,7 @@ export function RosterTab() {
             reload()
           }}
         />
+        {weeks.length === 0 ? null : (
         <ul className="border border-line bg-surface">
           {weeks.map((week) => (
             <li key={week.id}>
@@ -598,6 +605,7 @@ export function RosterTab() {
             </li>
           ))}
         </ul>
+        )}
       </aside>
       {current ? (
         <WeekView
