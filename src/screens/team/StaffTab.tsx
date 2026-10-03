@@ -86,7 +86,9 @@ function PinNotice({ name, pin, onClose }: { name: string; pin: string; onClose:
 function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: (staff: Staff, pin: string) => void }) {
   const [name, setName] = useState('')
   const [staffCode, setStaffCode] = useState('')
-  const [workTypeId, setWorkTypeId] = useState('')
+  // The first rate is preselected: someone added with no rate cannot be paid.
+  const [workTypeId, setWorkTypeId] = useState(workTypes.find((type) => type.isActive)?.id ?? '')
+  const noRates = !workTypes.some((type) => type.isActive)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -142,6 +144,11 @@ function AddStaffForm({ workTypes, onAdded }: { workTypes: WorkType[]; onAdded: 
         <button type="submit" disabled={saving || !name.trim()} className="vista-button-primary flex min-h-11 items-center justify-center gap-2 disabled:opacity-50">
           <UserPlus aria-hidden="true" className="size-4" /> Add staff
         </button>
+        {noRates ? (
+          <p className="text-xs font-bold text-warning sm:col-span-4">
+            No pay rates yet — add them under Pay rates below (one click), so this person can be paid.
+          </p>
+        ) : null}
         {error ? <p className="text-xs font-bold text-serious sm:col-span-4">{error}</p> : null}
       </form>
     </Panel>
@@ -362,7 +369,9 @@ export function StaffTab() {
                     <td className="px-3 py-1">
                       {staff.hasPin ? <PinCell staffId={staff.id} version={staff.pinSetAt} /> : <span className="text-xs text-muted">—</span>}
                     </td>
-                    <td className="px-3 py-2.5">{workTypeName(staff.defaultWorkTypeId)}</td>
+                    <td className="px-3 py-2.5">
+                      {staff.defaultWorkTypeId ? workTypeName(staff.defaultWorkTypeId) : <Badge tone="warning">No rate — pick one</Badge>}
+                    </td>
                     <td className="px-3 py-2.5">
                       {staff.status === 'ACTIVE' ? <Badge tone="good">Active</Badge> : <Badge>Inactive</Badge>}
                     </td>

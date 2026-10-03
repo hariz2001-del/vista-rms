@@ -493,7 +493,21 @@ function WeekView({
               Unpublish
             </button>
           ) : (
-            <button type="button" disabled={busy} onClick={() => act(() => rosterApi.publish(data.week.id))} className="vista-button-primary min-h-11 px-5 disabled:opacity-50">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                const warning =
+                  data.slots.length === 0
+                    ? 'This week has no shifts yet. Publish it anyway?'
+                    : unfilled > 0
+                      ? `${unfilled} place${unfilled === 1 ? ' is' : 's are'} still empty. Publish anyway? Staff will only see their own shifts.`
+                      : null
+                if (warning && !window.confirm(warning)) return
+                void act(() => rosterApi.publish(data.week.id))
+              }}
+              className="vista-button-primary min-h-11 px-5 disabled:opacity-50"
+            >
               Publish to staff
             </button>
           )}
@@ -529,7 +543,11 @@ function WeekView({
         </div>
       ) : null}
 
-      <Badge tone={unfilled ? 'warning' : 'good'}>{unfilled ? `${unfilled} place${unfilled === 1 ? '' : 's'} still to fill` : 'Every shift filled'}</Badge>
+      {data.slots.length === 0 ? (
+        <Badge tone="warning">No shifts yet — use “Add shift” on each day</Badge>
+      ) : (
+        <Badge tone={unfilled ? 'warning' : 'good'}>{unfilled ? `${unfilled} place${unfilled === 1 ? '' : 's'} still to fill` : 'Every shift filled'}</Badge>
+      )}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
         {days.map((date) => (
