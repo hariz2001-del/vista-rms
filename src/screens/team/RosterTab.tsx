@@ -263,17 +263,21 @@ function SlotCard({
   return (
     <article className={`border bg-surface p-3 ${slot.openCoverage?.isUrgent ? 'border-critical' : short ? 'border-warning/60' : 'border-line'}`}>
       <div className="flex items-start gap-1">
-        <div className="min-w-0">
-          <p className="font-bold">
+        <button type="button" onClick={() => setEditingShift(true)} title="Edit this shift" className="min-w-0 text-left">
+          <span className="block font-bold hover:underline">
             {timeText(slot.startTime)}–{timeText(slot.endTime)}
-          </p>
-          <p className="text-xs text-muted">
+          </span>
+          <span className="block text-xs text-muted">
             {hoursText(slot.minutes)} · {active.length}/{slot.requiredStaff} people
             {slot.label ? ` · ${slot.label}` : ''}
-          </p>
-        </div>
-        <button type="button" aria-label="Edit shift" title="Edit shift" onClick={() => setEditingShift(true)} className="ml-auto grid size-8 shrink-0 place-items-center text-muted hover:text-ink">
-          <Pencil aria-hidden="true" className="size-4" />
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditingShift(true)}
+          className="ml-auto flex min-h-8 shrink-0 items-center gap-1 border border-line px-2 text-xs font-bold text-ink hover:bg-canvas"
+        >
+          <Pencil aria-hidden="true" className="size-3.5" /> Edit
         </button>
         <button
           type="button"
