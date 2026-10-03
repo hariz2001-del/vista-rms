@@ -5,6 +5,7 @@ import { AttendanceTab } from './team/AttendanceTab.tsx'
 import { PayrollTab } from './team/PayrollTab.tsx'
 import { RosterTab } from './team/RosterTab.tsx'
 import { StaffTab } from './team/StaffTab.tsx'
+import { GettingStarted } from './team/GettingStarted.tsx'
 import { TeamSettingsTab } from './team/TeamSettingsTab.tsx'
 
 /*
@@ -36,6 +37,8 @@ function Step({ title, children }: { title: string; children: ReactNode }) {
  */
 export function TeamScreen() {
   const [tab, setTab] = useState<TabKey>('roster')
+  // Bumped when the checklist changes something, so the open tab reloads too.
+  const [version, setVersion] = useState(0)
 
   return (
     <div className="space-y-5">
@@ -68,6 +71,9 @@ export function TeamScreen() {
             ))}
           </div>
 
+          <GettingStarted key={`${tab}:${version}`} onGo={setTab} onChanged={() => setVersion((value) => value + 1)} />
+
+          <div key={version} className="space-y-5">
           {tab === 'roster' ? <RosterTab /> : null}
           {tab === 'pay' ? (
             <div className="space-y-8">
@@ -87,6 +93,7 @@ export function TeamScreen() {
               </Step>
             </div>
           ) : null}
+          </div>
         </>
       )}
     </div>
