@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { EmptyState, SectionHeading } from '../components/primitives.tsx'
 import { IS_DEMO } from '../lib/mode.ts'
 import { AttendanceTab } from './team/AttendanceTab.tsx'
@@ -12,15 +12,22 @@ import { TeamSettingsTab } from './team/TeamSettingsTab.tsx'
  * exist in ./team/ and their routes in the API (the audit trail is still
  * written); they are just not offered for now. Work types live inside Staff.
  */
-type TabKey = 'roster' | 'attendance' | 'payroll' | 'staff' | 'settings'
+type TabKey = 'roster' | 'pay' | 'staff'
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'roster', label: 'Roster' },
-  { key: 'attendance', label: 'Hours worked' },
-  { key: 'payroll', label: 'Payroll' },
+  { key: 'pay', label: 'Pay' },
   { key: 'staff', label: 'Staff' },
-  { key: 'settings', label: 'Settings' },
 ]
+
+function Step({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="font-display text-lg font-bold">{title}</h3>
+      {children}
+    </section>
+  )
+}
 
 /**
  * Team: the people who work shifts, what they are paid for each kind of work,
@@ -62,10 +69,24 @@ export function TeamScreen() {
           </div>
 
           {tab === 'roster' ? <RosterTab /> : null}
-          {tab === 'attendance' ? <AttendanceTab /> : null}
-          {tab === 'payroll' ? <PayrollTab /> : null}
-          {tab === 'staff' ? <StaffTab /> : null}
-          {tab === 'settings' ? <TeamSettingsTab /> : null}
+          {tab === 'pay' ? (
+            <div className="space-y-8">
+              <Step title="1. Confirm the hours worked">
+                <AttendanceTab />
+              </Step>
+              <Step title="2. Approve and pay">
+                <PayrollTab />
+              </Step>
+            </div>
+          ) : null}
+          {tab === 'staff' ? (
+            <div className="space-y-8">
+              <StaffTab />
+              <Step title="Settings">
+                <TeamSettingsTab />
+              </Step>
+            </div>
+          ) : null}
         </>
       )}
     </div>
