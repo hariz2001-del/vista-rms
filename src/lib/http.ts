@@ -7,6 +7,9 @@
  */
 
 const TOKEN_KEY = 'vista.rms.token'
+
+/** Fired after any successful change under /rms/team. */
+export const TEAM_CHANGED = 'vista:team-changed'
 const TIMEOUT_MS = 20_000
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:3000').replace(
@@ -112,6 +115,9 @@ export async function apiRequest<T>(
 
     throw new ApiError(code, error.message ?? 'The server could not complete that.', response.status)
   }
+
+  // Lets the Team checklist tick itself off the moment something changes.
+  if (method !== 'GET' && path.startsWith('/rms/team')) window.dispatchEvent(new Event(TEAM_CHANGED))
 
   return payload as T
 }

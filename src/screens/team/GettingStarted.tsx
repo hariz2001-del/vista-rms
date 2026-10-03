@@ -1,7 +1,8 @@
 import { Check } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { rosterApi } from '../../data/roster-api.ts'
 import { errorText, teamApi, useLoad } from '../../data/team-api.ts'
+import { TEAM_CHANGED } from '../../lib/http.ts'
 
 type Go = (tab: 'roster' | 'pay' | 'staff') => void
 
@@ -11,7 +12,7 @@ type Go = (tab: 'roster' | 'pay' | 'staff') => void
  * add staff with no pay rate, which would only surface weeks later at payroll.
  * Remounted (and so re-checked) by its parent whenever the tab changes.
  */
-export function GettingStarted({ onGo, onChanged }: { onGo: Go; onChanged: () => void }) {
+export function GettingStarted({ current, onGo, onChanged }: { current: 'roster' | 'pay' | 'staff'; onGo: Go; onChanged: () => void }) {
   const { data, reload } = useLoad(() =>
     Promise.all([teamApi.listWorkTypes(), teamApi.listStaff(), teamApi.getSettings(), rosterApi.weeks()]).then(
       ([types, staff, settings, weeks]) => ({
@@ -22,6 +23,10 @@ export function GettingStarted({ onGo, onChanged }: { onGo: Go; onChanged: () =>
       }),
     ),
   )
+  useEffect(() => {
+    window.addEventListener(TEAM_CHANGED, reload)
+    return () => window.removeEventListener(TEAM_CHANGED, reload)
+  }, [reload])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,32 +62,35 @@ export function GettingStarted({ onGo, onChanged }: { onGo: Go; onChanged: () =>
     {
       done: data.hasStaff,
       title: 'Add your staff',
-      hint: 'Each person gets a 4-digit PIN to sign in on their phone.',
-      action: (
-        <button type="button" onClick={() => onGo('staff')} className="vista-button-primary min-h-10">
-          Add staff
-        </button>
-      ),
+      hint: 'Each person gets a 4-digit PIN to sign in on their phone. Use the form under Staff.',
+      action:
+        current === 'staff' ? null : (
+          <button type="button" onClick={() => onGo('staff')} className="vista-button-primary min-h-10">
+            Add staff
+          </button>
+        ),
     },
     {
       done: data.hasCode,
       title: 'Choose a workplace code',
-      hint: 'Staff type this once on their phone, e.g. SARANG. Without it they need your account email.',
-      action: (
-        <button type="button" onClick={() => onGo('staff')} className="vista-button-primary min-h-10">
-          Set the code
-        </button>
-      ),
+      hint: 'Staff type this once on their phone, e.g. SARANG. Without it they need your account email. It is under Staff → Settings.',
+      action:
+        current === 'staff' ? null : (
+          <button type="button" onClick={() => onGo('staff')} className="vista-button-primary min-h-10">
+            Set the code
+          </button>
+        ),
     },
     {
       done: data.hasWeek,
       title: 'Make your first roster',
-      hint: 'Create a week, add shifts, put people on them, publish.',
-      action: (
-        <button type="button" onClick={() => onGo('roster')} className="vista-button-primary min-h-10">
-          Go to Roster
-        </button>
-      ),
+      hint: 'Create a week on the left of Roster, add shifts, put people on them, publish.',
+      action:
+        current === 'roster' ? null : (
+          <button type="button" onClick={() => onGo('roster')} className="vista-button-primary min-h-10">
+            Go to Roster
+          </button>
+        ),
     },
   ]
   const next = steps.findIndex((step) => !step.done)

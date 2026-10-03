@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AppShell, type ScreenKey } from './components/AppShell.tsx'
+import { AppShell, NAV, type ScreenKey } from './components/AppShell.tsx'
 import { BannerPreviewControls, StatusBanner } from './components/StatusBanner.tsx'
 import { useApiStore } from './data/api-store.ts'
 import { useDemoStore } from './data/store.ts'
@@ -42,7 +42,23 @@ export default function App() {
   )
   const [handoffError, setHandoffError] = useState<string | null>(null)
   const store = useStore(signedIn)
-  const [chosenScreen, setScreen] = useState<ScreenKey>('overview')
+  // Remembered, so a reload does not throw the owner back to Overview mid-task.
+  const [chosenScreen, setChosenScreen] = useState<ScreenKey>(() => {
+    try {
+      const saved = sessionStorage.getItem('vista.rms.screen')
+      return NAV.some((item) => item.key === saved) ? (saved as ScreenKey) : 'overview'
+    } catch {
+      return 'overview'
+    }
+  })
+  const setScreen = (next: ScreenKey) => {
+    setChosenScreen(next)
+    try {
+      sessionStorage.setItem('vista.rms.screen', next)
+    } catch {
+      // Not remembered this time; nothing else depends on it.
+    }
+  }
   // Settlement exists only for a business that has switched it on.
   const screen =
     chosenScreen === 'settlement' && !store.settings.settlementEnabled ? 'overview' : chosenScreen

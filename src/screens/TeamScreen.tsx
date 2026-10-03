@@ -54,7 +54,7 @@ export function TeamScreen() {
         />
       ) : (
         <>
-          <div role="tablist" aria-label="Team sections" className="-mx-4 flex gap-1 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+          <div role="tablist" aria-label="Team sections" className="-mx-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 sm:mx-0 sm:flex-wrap sm:px-0">
             {TABS.map((item) => (
               <button
                 key={item.key}
@@ -71,7 +71,7 @@ export function TeamScreen() {
             ))}
           </div>
 
-          <GettingStarted key={`${tab}:${version}`} onGo={setTab} onChanged={() => setVersion((value) => value + 1)} />
+          <GettingStarted key={`${tab}:${version}`} current={tab} onGo={setTab} onChanged={() => setVersion((value) => value + 1)} />
 
           <div key={version} className="space-y-5">
           {tab === 'roster' ? <RosterTab /> : null}
