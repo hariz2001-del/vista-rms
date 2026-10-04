@@ -90,8 +90,8 @@ export default function App() {
   }, [])
 
   const attentionCount = useMemo(
-    () => attentionItems(store.expenses, store.corrections).length,
-    [store.expenses, store.corrections],
+    () => attentionItems(store.corrections).length,
+    [store.corrections],
   )
 
   async function handleSignIn(email: string, password: string): Promise<string | null> {

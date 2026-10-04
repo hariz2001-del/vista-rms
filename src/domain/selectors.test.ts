@@ -63,7 +63,7 @@ describe('correction reporting', () => {
   })
 
   it('surfaces cashier corrections as owner activity even when no money changed', () => {
-    expect(attentionItems([], [CORRECTION])).toEqual([
+    expect(attentionItems([CORRECTION])).toEqual([
       expect.objectContaining({
         kind: 'CORRECTION_ACTIVITY',
         title: '#014 edited',

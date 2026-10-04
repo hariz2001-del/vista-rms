@@ -1,4 +1,4 @@
-import { ArrowRight, HandCoins, ReceiptText } from 'lucide-react'
+import { ArrowRight, ReceiptText } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { PanelErrorBoundary } from '../components/PanelErrorBoundary.tsx'
 import { SalesLineChart } from '../components/SalesLineChart.tsx'
@@ -35,8 +35,8 @@ export function OverviewScreen({
     [range, store.orders, store.expenses, store.corrections],
   )
   const attention = useMemo(
-    () => attentionItems(store.expenses, store.corrections),
-    [store.expenses, store.corrections],
+    () => attentionItems(store.corrections),
+    [store.corrections],
   )
 
   const balanceSen = liquidBalance(store.ledger)
@@ -60,7 +60,7 @@ export function OverviewScreen({
         <Panel className="border-t-2 border-t-warning lg:p-5">
           <SectionHeading
             title="Owner's desk"
-            hint={`${attention.length} item${attention.length === 1 ? '' : 's'} worth seeing: partner reimbursements need action; cashier corrections are shown for oversight, not approval.`}
+            hint={`${attention.length} cashier correction${attention.length === 1 ? '' : 's'}, shown for oversight, not approval.`}
           />
           <ul className="divide-y divide-slate-100">
             {attention.map((item) => (
@@ -68,20 +68,14 @@ export function OverviewScreen({
                 key={item.id}
                 className="grid gap-2 py-3.5 sm:grid-cols-[1.25rem_minmax(0,1fr)_auto_auto_auto] sm:items-center sm:gap-3"
               >
-                {item.kind === 'UNSETTLED_ADVANCE' ? (
-                  <HandCoins aria-hidden="true" className="size-4 shrink-0 text-muted" />
-                ) : (
-                  <ReceiptText aria-hidden="true" className="size-4 shrink-0 text-warning" />
-                )}
+                <ReceiptText aria-hidden="true" className="size-4 shrink-0 text-warning" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-black text-ink">{item.title}</p>
                   <p className="text-xs font-semibold text-muted">
                     {formatDate(item.businessDate)} · {item.detail}
                   </p>
                 </div>
-                <Badge tone={item.kind === 'UNSETTLED_ADVANCE' ? 'info' : 'warning'}>
-                  {item.kind === 'UNSETTLED_ADVANCE' ? 'Owed to partner' : 'Cashier correction'}
-                </Badge>
+                <Badge tone="warning">Cashier correction</Badge>
                 <span className="font-mono text-sm font-bold tabular">
                   {item.deltaSen === null
                     ? formatRinggit(item.amountSen)
@@ -91,12 +85,10 @@ export function OverviewScreen({
                 </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    onNavigate(item.kind === 'UNSETTLED_ADVANCE' ? 'settlement' : 'cashflow')
-                  }
+                  onClick={() => onNavigate('cashflow')}
                   className="min-h-9 border border-line px-3 text-xs font-bold text-muted hover:bg-canvas"
                 >
-                  {item.kind === 'UNSETTLED_ADVANCE' ? 'Settle' : 'Review ledger'}
+                  Review ledger
                 </button>
               </li>
             ))}
