@@ -1,15 +1,14 @@
-import { AlertTriangle, ArrowRight, Banknote, HandCoins, Lock } from 'lucide-react'
+import { AlertTriangle, Banknote, Lock } from 'lucide-react'
+import { OwedToPartners } from '../components/OwedToPartners.tsx'
 import { useMemo, useState } from 'react'
 import { Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { openingDeficitFor, settlePeriod } from '../domain/finance.ts'
 import { formatRinggit } from '../domain/money.ts'
 import {
-  formatDate,
   formatRange,
   inRange,
   monthOf,
-  partnerAdvances,
   rangePresets,
 } from '../domain/selectors.ts'
 
@@ -84,7 +83,6 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
   ])
 
   const [confirming, setConfirming] = useState(false)
-  const advances = useMemo(() => partnerAdvances(store.expenses), [store.expenses])
 
   /**
    * Reasons this period cannot be frozen yet.
@@ -284,49 +282,8 @@ export function SettlementScreen({ store }: { store: VistaStore }) {
         </Panel>
       </div>
 
-      <Panel>
-        <SectionHeading
-          title="Between the partners"
-          hint="Money a partner paid from their own pocket. The stall owes them all of it — both brands already bore their share through the operating results above."
-        />
-        {advances.length === 0 ? (
-          <p className="py-6 text-center text-sm font-semibold text-muted">
-            Nothing outstanding between partners.
-          </p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {advances.map(({ expense, owedToPayerSen, payer: payerSide }) => {
-              const payer = payerSide === 'FOOD' ? foodBrand : drinksBrand
-              return (
-                <li key={expense.id} className="flex flex-wrap items-center gap-3 py-3">
-                  <HandCoins aria-hidden="true" className="size-4 shrink-0 text-muted" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-black">{expense.description}</p>
-                    <p className="text-xs font-semibold text-muted">
-                      {formatDate(expense.businessDate)} · {payer.name} paid{' '}
-                      {formatRinggit(expense.amountSen)}
-                      {expense.brandId === null
-                        ? `, split ${expense.foodSplitPct}/${100 - expense.foodSplitPct}`
-                        : ''}
-                    </p>
-                  </div>
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-muted">
-                    Stall <ArrowRight aria-hidden="true" className="size-3" /> {payer.name}
-                  </span>
-                  <span className="tabular text-sm font-black">{formatRinggit(owedToPayerSen)}</span>
-                  <button
-                    type="button"
-                    onClick={() => store.settleAdvance(expense.id)}
-                    className="vista-button-primary"
-                  >
-                    Mark reimbursed
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </Panel>
+      {/* One total per partner; the receipts open underneath. */}
+      <OwedToPartners store={store} />
 
       {/* The sentence a settlement has to end with. Two payout figures are a
           calculation; this is an instruction someone can actually act on. */}
