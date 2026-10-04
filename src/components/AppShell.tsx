@@ -1,5 +1,6 @@
 import {
   BookOpenText,
+  Boxes,
   LayoutDashboard,
   Receipt,
   ReceiptText,
@@ -18,11 +19,12 @@ export type ScreenKey =
   | 'expenses'
   | 'settlement'
   | 'menu'
+  | 'stock'
   | 'team'
   | 'settings'
 
 /**
- * Eight sections, not the predecessor's sprawl. Receipts is the counter's own
+ * Nine sections, not the predecessor's sprawl. Receipts is the counter's own
  * tickets, read-only: it shows what was sold, never a total of its own.
  *
  * That product ended up with five overlapping places to look at money, two of
@@ -43,6 +45,7 @@ export const NAV: Array<{
   { key: 'expenses', label: 'Expenses', mobileLabel: 'Spend', icon: Receipt },
   { key: 'settlement', label: 'Settlement', mobileLabel: 'Owed', icon: Users },
   { key: 'menu', label: 'Menu', mobileLabel: 'Menu', icon: UtensilsCrossed },
+  { key: 'stock', label: 'Stock', mobileLabel: 'Stock', icon: Boxes },
   { key: 'team', label: 'Team', mobileLabel: 'Team', icon: Contact },
   { key: 'settings', label: 'Settings', mobileLabel: 'Setup', icon: SettingsIcon },
 ]
@@ -190,7 +193,8 @@ export function AppShell({
                 }`}
               >
                 <Icon aria-hidden="true" strokeWidth={isActive ? 2.2 : 1.7} className="size-[1.15rem]" />
-                <span>{item.mobileLabel}</span>
+                {/* Size on the span: the global `button { font: inherit }` beats utilities on the button. */}
+                <span className="text-[0.62rem] leading-none">{item.mobileLabel}</span>
                 {item.key === 'overview' && attentionCount > 0 ? (
                   <span className="absolute right-1/4 top-2 size-1.5 rounded-full bg-food" />
                 ) : null}
