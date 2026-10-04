@@ -99,10 +99,9 @@ export function OverviewScreen({
       <section aria-label="Period financial summary" className="grid border border-line bg-surface sm:grid-cols-2">
         <StatTile
           hero
-          label="Operating result"
-          value={<Money sen={summary.operatingResultSen} tone={summary.operatingResultSen >= 0 ? 'in' : 'out'} />}
-          sub="Net sales minus operating expenses. Cost of goods is not tracked, so this is not accounting profit."
-          tone={summary.operatingResultSen >= 0 ? 'good' : 'critical'}
+          label="Net sales"
+          value={<Money sen={summary.netSalesSen} />}
+          sub="What customers paid, after discounts and cashier corrections."
           className="border-t-0 sm:border-r sm:border-r-line"
         />
         <StatTile
@@ -115,7 +114,13 @@ export function OverviewScreen({
       </section>
 
       <section aria-label="Period activity" className="grid grid-cols-2 border border-line bg-surface lg:grid-cols-4">
-        <StatTile className="border-t-0 border-r border-r-line" label="Net sales" value={<Money sen={summary.netSalesSen} />} />
+        <StatTile
+          className="border-t-0 border-r border-r-line"
+          label="Operating result"
+          value={<Money sen={summary.operatingResultSen} tone={summary.operatingResultSen >= 0 ? 'in' : 'out'} />}
+          sub="Net sales minus operating expenses"
+          tone={summary.operatingResultSen >= 0 ? 'good' : 'critical'}
+        />
         <StatTile
           className="border-t-0 lg:border-r lg:border-r-line"
           label="Discounts given"
