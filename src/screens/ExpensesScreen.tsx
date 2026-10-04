@@ -1,6 +1,7 @@
 import { HandCoins, Pencil, Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
+import { OwedToPartners } from '../components/OwedToPartners.tsx'
 import { CATEGORIES, ExpenseForm, PAYMENT_METHODS } from '../components/ExpenseForm.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
@@ -81,6 +82,8 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
             : 'Log what the business spends, receipt by receipt. Every cost comes out of the cashflow balance.'}
         </p>
       </div>
+
+      {withSettlement ? <OwedToPartners store={store} /> : null}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <Panel className="scroll-mt-4 p-4 sm:p-5">

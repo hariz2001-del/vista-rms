@@ -178,7 +178,7 @@ export function summariseRange(
 
 export type AttentionItem = {
   id: string
-  kind: 'UNSETTLED_ADVANCE' | 'CORRECTION_ACTIVITY'
+  kind: 'CORRECTION_ACTIVITY'
   title: string
   detail: string
   businessDate: string
@@ -190,23 +190,11 @@ export type AttentionItem = {
  * Owner-visible work and security activity. Corrections need no approval, but
  * hiding direct cashier refunds in the cash book would remove the only practical
  * oversight control on that power.
+ *
+ * Money owed to partners is not here: it sits on the Expenses screen, one
+ * total per partner, where it is paid back.
  */
-export function attentionItems(
-  expenses: readonly Expense[],
-  corrections: readonly SaleCorrection[] = [],
-): AttentionItem[] {
-  const advances = expenses
-    .filter((expense) => expense.paidBy !== 'STALL_FUNDS' && !expense.isSettled)
-    .map((expense) => ({
-      id: `advance-${expense.id}`,
-      kind: 'UNSETTLED_ADVANCE' as const,
-      title: `${expense.description} paid out of pocket`,
-      detail: 'The stall has not reimbursed this yet.',
-      businessDate: expense.businessDate,
-      amountSen: expense.amountSen,
-      deltaSen: null,
-    }))
-
+export function attentionItems(corrections: readonly SaleCorrection[] = []): AttentionItem[] {
   const correctionActivity = corrections.map((correction) => ({
     id: `correction-${correction.id}`,
     kind: 'CORRECTION_ACTIVITY' as const,
@@ -217,7 +205,7 @@ export function attentionItems(
     deltaSen: correction.deltaSen,
   }))
 
-  return [...advances, ...correctionActivity].toSorted((a, b) =>
+  return correctionActivity.toSorted((a, b) =>
     b.businessDate.localeCompare(a.businessDate),
   )
 }
