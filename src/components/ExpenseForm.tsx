@@ -25,7 +25,13 @@ import {
   type ChargeTo,
   type PastedExpense,
 } from '../domain/receipt-paste.ts'
-import type { Brand, ExpenseCategory, PaymentMethod, PaymentSource } from '../domain/types.ts'
+import type {
+  Brand,
+  Expense,
+  ExpenseCategory,
+  PaymentMethod,
+  PaymentSource,
+} from '../domain/types.ts'
 
 export const CATEGORIES: Array<{ value: ExpenseCategory; label: string; local: string }> = [
   { value: 'RAW_MATERIALS', label: 'Stock / ingredients', local: 'Bahan mentah' },
@@ -136,6 +142,8 @@ export function ExpenseForm({
   sharedFoodPct,
   equipmentFoodPct,
   onLog,
+  editing,
+  onCancel,
 }: {
   today: string
   brands: Brand[]
@@ -145,32 +153,65 @@ export function ExpenseForm({
   /** The owner's split for equipment, from Settings. */
   equipmentFoodPct: number
   onLog: (expense: NewExpense) => void
+  /** A logged expense to correct. The form starts filled from it; mount it with a `key`. */
+  editing?: Expense
+  onCancel?: () => void
 }) {
   const foodBrand = brands[0]
   const drinksBrand = brands[1]
   const foodName = foodBrand?.name ?? 'Food'
   const drinksName = drinksBrand?.name ?? 'Drinks'
+  const editItems = editing?.items ?? []
 
   // Receipt
-  const [vendor, setVendor] = useState('')
-  const [receiptNo, setReceiptNo] = useState('')
-  const [businessDate, setBusinessDate] = useState(today)
-  const [receiptTime, setReceiptTime] = useState('')
+  const [vendor, setVendor] = useState(editing?.vendor ?? '')
+  const [receiptNo, setReceiptNo] = useState(editing?.receiptNo ?? '')
+  const [businessDate, setBusinessDate] = useState(editing?.businessDate ?? today)
+  const [receiptTime, setReceiptTime] = useState(editing?.receiptTime ?? '')
 
   // Amount
-  const [mode, setMode] = useState<'LUMP' | 'ITEMS'>('LUMP')
-  const [amount, setAmount] = useState('')
-  const [rows, setRows] = useState<Row[]>(() => [newRow()])
-  const [description, setDescription] = useState('')
+  const [mode, setMode] = useState<'LUMP' | 'ITEMS'>(editItems.length > 0 ? 'ITEMS' : 'LUMP')
+  const [amount, setAmount] = useState(
+    editing && editItems.length === 0 ? (editing.amountSen / 100).toFixed(2) : '',
+  )
+  const [rows, setRows] = useState<Row[]>(() =>
+    editItems.length > 0
+      ? editItems.map((item) =>
+          newRow({
+            name: item.name,
+            quantity: formatQuantity(item.quantityMilli),
+            unit: item.unit ?? '',
+            price: (item.unitPriceSen / 100).toFixed(2),
+          }),
+        )
+      : [newRow()],
+  )
+  const [description, setDescription] = useState(editing?.description ?? '')
 
   // Classification and payment
-  const [category, setCategory] = useState<ExpenseCategory>('RAW_MATERIALS')
-  const [paidBy, setPaidBy] = useState<PaymentSource>('STALL_FUNDS')
-  const [method, setMethod] = useState<PaymentMethod | null>(null)
-  const [target, setTarget] = useState<ChargeTo>('FOOD')
-  const [foodPct, setFoodPct] = useState(sharedFoodPct)
-  const [splitPreset, setSplitPreset] = useState<'STANDARD' | 'EQUIPMENT' | 'CUSTOM'>('STANDARD')
-  const [notes, setNotes] = useState('')
+  const [category, setCategory] = useState<ExpenseCategory>(editing?.category ?? 'RAW_MATERIALS')
+  const [paidBy, setPaidBy] = useState<PaymentSource>(editing?.paidBy ?? 'STALL_FUNDS')
+  const [method, setMethod] = useState<PaymentMethod | null>(editing?.paymentMethod ?? null)
+  const [target, setTarget] = useState<ChargeTo>(() =>
+    !editing
+      ? 'FOOD'
+      : editing.brandId === null
+        ? 'SHARED'
+        : editing.brandId === foodBrand?.id
+          ? 'FOOD'
+          : 'DRINKS',
+  )
+  const [foodPct, setFoodPct] = useState(
+    editing && editing.brandId === null ? editing.foodSplitPct : sharedFoodPct,
+  )
+  const [splitPreset, setSplitPreset] = useState<'STANDARD' | 'EQUIPMENT' | 'CUSTOM'>(() =>
+    !editing || editing.brandId !== null || editing.foodSplitPct === sharedFoodPct
+      ? 'STANDARD'
+      : editing.foodSplitPct === equipmentFoodPct
+        ? 'EQUIPMENT'
+        : 'CUSTOM',
+  )
+  const [notes, setNotes] = useState(editing?.notes ?? '')
   const [saved, setSaved] = useState(false)
 
   // Receipts read by Gemini, pasted back. The first fills the form; the rest
@@ -360,6 +401,11 @@ export function ExpenseForm({
           },
     )
 
+    if (editing) {
+      onCancel?.()
+      return
+    }
+
     const [next, ...rest] = queue
     if (next) {
       fillFrom(next)
@@ -381,7 +427,7 @@ export function ExpenseForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Fill from Gemini */}
-      {pasteOpen ? (
+      {editing ? null : pasteOpen ? (
         <div className="space-y-3 border border-rail/40 bg-canvas p-3">
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-black text-ink">Fill from a receipt</p>
@@ -849,6 +895,27 @@ export function ExpenseForm({
       </Section>
 
       <div className="sticky bottom-0 -mx-4 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-5 sm:px-5">
+        {editing ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="min-h-14 border border-line px-4 hover:bg-canvas"
+            >
+              <span className="text-base font-bold text-ink">Cancel</span>
+            </button>
+            <button
+              type="submit"
+              disabled={!canSave}
+              className="flex min-h-14 flex-1 items-center justify-center gap-2 bg-rail text-white transition-colors hover:bg-[#24554a] disabled:bg-slate-300"
+            >
+              <Check aria-hidden="true" className="size-5" />
+              <span className="text-base font-bold">
+                Save changes{amountSen !== null && amountSen > 0 ? ` · ${formatRinggit(amountSen)}` : ''}
+              </span>
+            </button>
+          </div>
+        ) : (
         <button
           type="submit"
           disabled={!canSave}
@@ -868,6 +935,7 @@ export function ExpenseForm({
             </>
           )}
         </button>
+        )}
       </div>
     </form>
   )

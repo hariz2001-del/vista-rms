@@ -207,6 +207,20 @@ export function useApiStore(enabled: boolean): VistaStore {
     [perform],
   )
 
+  const updateExpense = useCallback(
+    (expenseId: string, input: NewExpense) => {
+      void perform('The correction', () => apiRequest('PUT', `/rms/expenses/${expenseId}`, input))
+    },
+    [perform],
+  )
+
+  const deleteExpense = useCallback(
+    (expenseId: string) => {
+      void perform('Deleting the expense', () => apiRequest('DELETE', `/rms/expenses/${expenseId}`))
+    },
+    [perform],
+  )
+
   const adjustBalance = useCallback(
     (input: BalanceAdjustment) => {
       void perform('The adjustment', () => apiRequest('POST', '/rms/ledger/adjustments', input))
@@ -364,6 +378,8 @@ export function useApiStore(enabled: boolean): VistaStore {
       reopenDemoShift,
       simulateTerminal,
       addExpense,
+      updateExpense,
+      deleteExpense,
       adjustBalance,
       settleAdvance,
       toggleSoldOut,
@@ -387,6 +403,8 @@ export function useApiStore(enabled: boolean): VistaStore {
       reopenDemoShift,
       simulateTerminal,
       addExpense,
+      updateExpense,
+      deleteExpense,
       adjustBalance,
       settleAdvance,
       toggleSoldOut,
