@@ -16,6 +16,7 @@ import {
 } from './lib/session.ts'
 import { CashflowScreen } from './screens/CashflowScreen.tsx'
 import { ExpensesScreen } from './screens/ExpensesScreen.tsx'
+import { StockScreen } from './screens/StockScreen.tsx'
 import { MenuScreen } from './screens/MenuScreen.tsx'
 import { OverviewScreen } from './screens/OverviewScreen.tsx'
 import { ReceiptsScreen } from './screens/ReceiptsScreen.tsx'
@@ -192,6 +193,7 @@ export default function App() {
       {screen === 'expenses' ? <ExpensesScreen store={store} /> : null}
       {screen === 'settlement' ? <SettlementScreen store={store} /> : null}
       {screen === 'menu' ? <MenuScreen store={store} /> : null}
+      {screen === 'stock' ? <StockScreen store={store} /> : null}
       {screen === 'team' ? <TeamScreen /> : null}
       {screen === 'settings' ? <SettingsScreen store={store} /> : null}
     </AppShell>
