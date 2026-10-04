@@ -3,6 +3,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
+import { moneyOutDescriber } from '../domain/cashflow.ts'
 import { withRunningBalance } from '../domain/finance.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import { formatDate, formatRange, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
@@ -67,6 +68,8 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
     endDate: store.today,
   }))
   const [grouped, setGrouped] = useState(true)
+  /** Both directions, or only money in, or only money out. */
+  const [flow, setFlow] = useState<'ALL' | 'IN' | 'OUT'>('ALL')
   const [category, setCategory] = useState<'ALL' | LedgerCategory>('ALL')
   const [adjusting, setAdjusting] = useState(false)
 
@@ -81,8 +84,23 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
     const all = withRunningBalance(source)
     return inRange(all, range.startDate, range.endDate)
       .filter((row) => category === 'ALL' || row.category === category)
+      .filter((row) => flow === 'ALL' || row.direction === (flow === 'IN' ? 'MONEY_IN' : 'MONEY_OUT'))
       .toReversed()
-  }, [store.ledger, grouped, range, category])
+  }, [store.ledger, grouped, range, category, flow])
+
+  // Money out also says how it was paid and who received it.
+  const describeOut = useMemo(
+    () =>
+      moneyOutDescriber({
+        brands: store.brands,
+        partners: store.partners,
+        expenses: store.expenses,
+        corrections: store.corrections,
+      }),
+    [store.brands, store.partners, store.expenses, store.corrections],
+  )
+  const showIn = flow !== 'OUT'
+  const showOut = flow !== 'IN'
 
   const totals = useMemo(() => {
     const periodRows = inRange(
@@ -158,6 +176,34 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
 
       <Panel>
         <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div role="group" aria-label="Show" className="flex border border-line">
+            {(
+              [
+                ['ALL', 'All'],
+                ['IN', 'Money in'],
+                ['OUT', 'Money out'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={flow === value}
+                onClick={() => setFlow(value)}
+                className={`min-h-11 px-4 ${
+                  flow === value
+                    ? value === 'IN'
+                      ? 'bg-good text-white'
+                      : value === 'OUT'
+                        ? 'bg-serious text-white'
+                        : 'bg-ink text-white'
+                    : 'bg-surface text-muted hover:bg-canvas'
+                }`}
+              >
+                <span className="text-sm font-bold">{label}</span>
+              </button>
+            ))}
+          </div>
+
           <select
             value={category}
             onChange={(event) => setCategory(event.target.value as 'ALL' | LedgerCategory)}
@@ -188,20 +234,34 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-muted">
                 <th className="py-2 text-left font-bold">Date</th>
                 <th className="py-2 text-left font-bold">Description</th>
+                {flow === 'OUT' ? (
+                  <>
+                    <th className="py-2 text-left font-bold">Source</th>
+                    <th className="py-2 text-left font-bold">For who</th>
+                  </>
+                ) : null}
                 <th className="py-2 text-left font-bold">Category</th>
-                <th className="py-2 text-left font-bold">Brand</th>
-                <th className="py-2 text-right font-bold">Money in</th>
-                <th className="py-2 text-right font-bold">Money out</th>
+                {flow === 'OUT' ? null : <th className="py-2 text-left font-bold">Brand</th>}
+                {showIn ? <th className="py-2 text-right font-bold">Money in</th> : null}
+                {showOut ? <th className="py-2 text-right font-bold">Money out</th> : null}
                 <th className="py-2 text-right font-bold">Balance</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {rows.map((row) => {
+                const out = flow === 'OUT' ? describeOut(row) : null
+                return (
                 <tr key={`${row.id}-${row.description}`} className="border-b border-slate-100">
                   <td className="whitespace-nowrap py-2 font-semibold">
                     {formatDate(row.businessDate)}
                   </td>
                   <td className="py-2 font-semibold text-ink">{row.description}</td>
+                  {out ? (
+                    <>
+                      <td className="py-2 pr-2 text-xs font-bold text-ink">{out.source}</td>
+                      <td className="py-2 pr-2 text-xs font-bold text-ink">{out.forWho}</td>
+                    </>
+                  ) : null}
                   <td className="py-2">
                     <Badge
                       tone={
@@ -215,18 +275,25 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
                       {CATEGORY_LABEL[row.category]}
                     </Badge>
                   </td>
-                  <td className="py-2 text-xs font-bold text-muted">{brandName(row.brandId)}</td>
-                  <td className="py-2 text-right">
-                    {row.moneyInSen > 0 ? <Money sen={row.moneyInSen} tone="in" /> : <span className="text-slate-300">—</span>}
-                  </td>
-                  <td className="py-2 text-right">
-                    {row.moneyOutSen > 0 ? <Money sen={row.moneyOutSen} tone="out" /> : <span className="text-slate-300">—</span>}
-                  </td>
+                  {flow === 'OUT' ? null : (
+                    <td className="py-2 text-xs font-bold text-muted">{brandName(row.brandId)}</td>
+                  )}
+                  {showIn ? (
+                    <td className="py-2 text-right">
+                      {row.moneyInSen > 0 ? <Money sen={row.moneyInSen} tone="in" /> : <span className="text-slate-300">—</span>}
+                    </td>
+                  ) : null}
+                  {showOut ? (
+                    <td className="py-2 text-right">
+                      {row.moneyOutSen > 0 ? <Money sen={row.moneyOutSen} tone="out" /> : <span className="text-slate-300">—</span>}
+                    </td>
+                  ) : null}
                   <td className="py-2 text-right font-black tabular">
                     {formatRinggit(row.balanceSen)}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -237,7 +304,9 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
           </p>
         ) : (
           <p className="pt-3 text-xs font-semibold text-muted">
-            {rows.length} entries · newest first.{' '}
+            {rows.length} entries · newest first
+            {flow === 'ALL' ? '' : ` · ${formatRinggit(rows.reduce((sum, row) => sum + row.amountSen, 0))} ${flow === 'IN' ? 'in' : 'out'}`}
+            .{' '}
             {grouped
               ? 'Daily sales are rolled up; untick to see every order. Refunds always keep their own line.'
               : 'Showing every individual sale.'}
