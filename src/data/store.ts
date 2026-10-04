@@ -215,7 +215,7 @@ export function useDemoStore(_enabled = true) {
   const signOutCounter = useCallback(() => setCounterSessions([]), [])
 
   const addExpense = useCallback(
-    (input: NewExpense) => {
+    (input: NewExpense, existingId?: string) => {
       const shared = input.brandId === null
       const { foodSen, drinksSen } = shared
         ? splitShared(input.amountSen, input.foodSplitPct)
@@ -224,7 +224,7 @@ export function useDemoStore(_enabled = true) {
           : { foodSen: 0, drinksSen: input.amountSen }
 
       const expense: Expense = {
-        id: `expense-${Date.now()}`,
+        id: existingId ?? `expense-${Date.now()}`,
         businessDate: input.businessDate,
         amountSen: input.amountSen,
         category: input.category,
@@ -248,7 +248,7 @@ export function useDemoStore(_enabled = true) {
         isLocked: false,
       }
 
-      setExpenses((current) => [expense, ...current])
+      setExpenses((current) => [expense, ...current.filter((candidate) => candidate.id !== existingId)])
 
       // Only money that actually left the stall account reaches the ledger. A
       // partner paying out of pocket creates a debt between partners instead.
@@ -271,6 +271,47 @@ export function useDemoStore(_enabled = true) {
       }
     },
     [],
+  )
+
+  /** Put a stall-funded expense's money back in the book, as the API does. */
+  const reverseExpense = useCallback((expense: Expense, why: string) => {
+    if (expense.paidBy !== 'STALL_FUNDS') return
+    setLedger((current) => [
+      ...current,
+      {
+        id: current.reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
+        businessDate: expense.businessDate,
+        entryAt: new Date().toISOString(),
+        direction: 'MONEY_IN',
+        amountSen: expense.amountSen,
+        category: expense.category === 'CAPITAL_ASSET' ? 'CAPITAL_ASSET' : 'OPERATING_EXPENSE',
+        description: `${why} · ${expense.description}`,
+        brandId: expense.brandId,
+        orderId: null,
+        shiftId: null,
+      },
+    ])
+  }, [])
+
+  // The demo keeps it simple: a correction always reverses and re-books.
+  const updateExpense = useCallback(
+    (expenseId: string, input: NewExpense) => {
+      const old = expenses.find((candidate) => candidate.id === expenseId)
+      if (!old) return
+      reverseExpense(old, 'Corrected')
+      addExpense(input, expenseId)
+    },
+    [expenses, reverseExpense, addExpense],
+  )
+
+  const deleteExpense = useCallback(
+    (expenseId: string) => {
+      const old = expenses.find((candidate) => candidate.id === expenseId)
+      if (!old) return
+      reverseExpense(old, 'Deleted')
+      setExpenses((current) => current.filter((candidate) => candidate.id !== expenseId))
+    },
+    [expenses, reverseExpense],
   )
 
   // There is deliberately no `resolveFlag` or `clearReview` here. The owner does
@@ -500,6 +541,8 @@ export function useDemoStore(_enabled = true) {
       reopenDemoShift,
       simulateTerminal,
       addExpense,
+      updateExpense,
+      deleteExpense,
       adjustBalance,
       settleAdvance,
       toggleSoldOut,
@@ -532,6 +575,8 @@ export function useDemoStore(_enabled = true) {
       reopenDemoShift,
       simulateTerminal,
       addExpense,
+      updateExpense,
+      deleteExpense,
       adjustBalance,
       settleAdvance,
       toggleSoldOut,

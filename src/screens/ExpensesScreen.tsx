@@ -1,5 +1,5 @@
-import { HandCoins } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { HandCoins, Pencil, Trash2 } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { CATEGORIES, ExpenseForm, PAYMENT_METHODS } from '../components/ExpenseForm.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
@@ -7,7 +7,7 @@ import type { VistaStore } from '../data/store.ts'
 import { formatQuantity } from '../domain/expense-items.ts'
 import { formatRinggit } from '../domain/money.ts'
 import { formatDate, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
-import type { ExpenseCategory, PaymentMethod } from '../domain/types.ts'
+import type { Expense, ExpenseCategory, PaymentMethod } from '../domain/types.ts'
 
 // Wages are not in the form's list: they are written by paying a payslip.
 const CATEGORY_LABEL = {
@@ -18,6 +18,16 @@ const CATEGORY_LABEL = {
 const METHOD_LABEL = Object.fromEntries(
   PAYMENT_METHODS.map((method) => [method.value, method.label]),
 ) as Record<PaymentMethod, string>
+
+/** Wages belong to their payslip, and a settled period is frozen. */
+function canChange(expense: Expense): boolean {
+  return !expense.isLocked && expense.category !== 'WAGES'
+}
+
+/** A partner already paid back for it: the payment happened, so it stays. */
+function isReimbursedAdvance(expense: Expense): boolean {
+  return expense.paidBy !== 'STALL_FUNDS' && expense.isSettled
+}
 
 export function ExpensesScreen({ store }: { store: VistaStore }) {
   const foodBrand = store.brands[0]
@@ -41,6 +51,25 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
 
   const total = visible.reduce((sum, expense) => sum + expense.amountSen, 0)
 
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const editing = store.expenses.find((expense) => expense.id === editingId)
+  const formTop = useRef<HTMLDivElement>(null)
+
+  function startEditing(expense: Expense) {
+    setEditingId(expense.id)
+    formTop.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  function remove(expense: Expense) {
+    const what = `${expense.vendor ? `${expense.vendor} · ` : ''}${expense.description}`
+    const cash =
+      expense.paidBy === 'STALL_FUNDS' ? ' Its money goes back into the cashflow balance.' : ''
+    if (window.confirm(`Delete "${what}" (${formatRinggit(expense.amountSen)})?${cash}`)) {
+      if (editingId === expense.id) setEditingId(null)
+      store.deleteExpense(expense.id)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="border-b border-line pb-5">
@@ -54,18 +83,35 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
       </div>
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-        <Panel className="p-4 sm:p-5">
-          <SectionHeading
-            title="Log a receipt"
-            hint="Amount and what it was are all that is required. The rest makes the books easy to check later."
-          />
+        <Panel className="scroll-mt-4 p-4 sm:p-5">
+          <div ref={formTop} />
+          {editing ? (
+            <SectionHeading
+              title="Edit expense"
+              hint={
+                isReimbursedAdvance(editing)
+                  ? 'The partner has been paid back for this, so who paid and the amount stay as they are.'
+                  : 'Saving replaces the entry. Any change to the money is corrected in the cashflow book.'
+              }
+            />
+          ) : (
+            <SectionHeading
+              title="Log a receipt"
+              hint="Amount and what it was are all that is required. The rest makes the books easy to check later."
+            />
+          )}
           <ExpenseForm
+            key={editing?.id ?? 'new'}
             today={store.today}
             brands={store.brands}
             withSettlement={withSettlement}
             sharedFoodPct={store.settings.sharedOverheadFoodPct}
             equipmentFoodPct={store.settings.capitalAssetFoodPct}
-            onLog={store.addExpense}
+            onLog={(input) =>
+              editing ? store.updateExpense(editing.id, input) : store.addExpense(input)
+            }
+            editing={editing}
+            onCancel={() => setEditingId(null)}
           />
         </Panel>
 
@@ -84,7 +130,10 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
               const items = expense.items ?? []
               const hasDetail = items.length > 0 || Boolean(expense.notes)
               return (
-                <li key={expense.id} className="py-3">
+                <li
+                  key={expense.id}
+                  className={`py-3 ${expense.id === editingId ? '-mx-2 bg-canvas px-2' : ''}`}
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-black text-ink">
@@ -133,6 +182,31 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
                     ) : null}
 
                     <Money sen={expense.amountSen} className="text-sm font-black" />
+
+                    {canChange(expense) ? (
+                      <div className="flex">
+                        <button
+                          type="button"
+                          onClick={() => startEditing(expense)}
+                          aria-label={`Edit ${expense.description}`}
+                          title="Edit"
+                          className="grid size-9 place-items-center text-muted hover:bg-canvas hover:text-ink"
+                        >
+                          <Pencil aria-hidden="true" className="size-4" />
+                        </button>
+                        {isReimbursedAdvance(expense) ? null : (
+                          <button
+                            type="button"
+                            onClick={() => remove(expense)}
+                            aria-label={`Delete ${expense.description}`}
+                            title="Delete"
+                            className="grid size-9 place-items-center text-muted hover:bg-canvas hover:text-serious"
+                          >
+                            <Trash2 aria-hidden="true" className="size-4" />
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
 
                   {hasDetail ? (
