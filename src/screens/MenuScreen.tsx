@@ -8,7 +8,7 @@ import {
   type DragOverEvent,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { Pencil, Plus, Trash2, X } from 'lucide-react'
+import { Eye, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Badge, Panel, SectionHeading } from '../components/primitives.tsx'
 import { DragHandle, SortableList, useDragSensors, useSortableRow } from '../components/Sortable.tsx'
@@ -29,6 +29,7 @@ import {
 } from '../domain/menu-suggestions.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import type { Brand, Category, ModifierGroup, Product } from '../domain/types.ts'
+import { PosPreview } from './PosPreview.tsx'
 import { PromotionsPanel } from './PromotionsPanel.tsx'
 
 /**
@@ -1263,6 +1264,7 @@ export function MenuScreen({ store }: { store: VistaStore }) {
   const [brandFilter, setBrandFilter] = useState<string | null>(null)
   const [openProduct, setOpenProduct] = useState<string | null>(null)
   const [addingTo, setAddingTo] = useState<string | null>(null)
+  const [posView, setPosView] = useState(false)
   const canEdit = store.canEditMenu
   const edit = store.editMenu
   const sensors = useDragSensors()
@@ -1352,8 +1354,20 @@ export function MenuScreen({ store }: { store: VistaStore }) {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="border-b border-line pb-5">
-        <p className="page-kicker">Catalogue / live availability</p>
-        <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Menu</h1>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <p className="page-kicker">Catalogue / live availability</p>
+            <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Menu</h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPosView(true)}
+            className="vista-button-secondary ml-auto flex min-h-11 items-center gap-2"
+            title="See the menu exactly as the counter shows it"
+          >
+            <Eye aria-hidden="true" className="size-4" /> POS view
+          </button>
+        </div>
         <p className="mt-2 max-w-3xl text-sm text-muted">
           Prices here are what the register charges. Changing one never alters a sale already made —
           past orders keep the price they were rung up at.
@@ -1487,6 +1501,7 @@ export function MenuScreen({ store }: { store: VistaStore }) {
           ))}
         </Panel>
       ) : null}
+      {posView ? <PosPreview brands={store.brands} categories={store.categories} products={store.products} onClose={() => setPosView(false)} /> : null}
     </div>
   )
 }
