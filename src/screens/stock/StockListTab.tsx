@@ -1,9 +1,10 @@
-import { ArrowDown, ArrowUp, Check, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, FileDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { BrandDot, EmptyState, Panel, SectionHeading } from '../../components/primitives.tsx'
 import { stockApi, type StockItem, type StockItemInput } from '../../data/stock-api.ts'
 import { errorText, useLoad } from '../../data/team-api.ts'
 import { groupStock, moveStock } from '../../domain/stock.ts'
+import { downloadStockChecklist } from '../../lib/stock-pdf.ts'
 import type { Brand, Category } from '../../domain/types.ts'
 
 const fieldClass =
@@ -64,7 +65,15 @@ function IconButton({
  * What the counter checks at closing. The owner names every item and decides
  * what is counted for it; nothing about the list is built in.
  */
-export function StockListTab({ brands, menuCategories }: { brands: Brand[]; menuCategories: Category[] }) {
+export function StockListTab({
+  brands,
+  menuCategories,
+  businessName,
+}: {
+  brands: Brand[]
+  menuCategories: Category[]
+  businessName: string
+}) {
   const { data, error, reload } = useLoad(stockApi.listItems)
   const items = useMemo(() => data?.items ?? [], [data])
   const [draft, setDraft] = useState<Draft>(() => blankDraft(brands[0]?.id ?? ''))
@@ -151,6 +160,22 @@ export function StockListTab({ brands, menuCategories }: { brands: Brand[]; menu
   function move(target: Parameters<typeof moveStock>[1], direction: -1 | 1) {
     const ids = moveStock(rows, target, direction)
     if (ids) void run(() => stockApi.orderItems(ids))
+  }
+
+  /** The active list as a blank sheet, to print and fill in by hand. */
+  async function checklistPdf() {
+    setProblem(null)
+    try {
+      await downloadStockChecklist(
+        items
+          .filter((item) => item.isActive)
+          .map((item) => ({ ...item, brand: brandName(item.brandId) })),
+        { businessName, filled: null },
+        'closing-stock-checklist.pdf',
+      )
+    } catch (caught) {
+      setProblem(errorText(caught, 'The PDF could not be made. Try again.'))
+    }
   }
 
   function toggleActive(item: StockItem) {
@@ -310,6 +335,18 @@ export function StockListTab({ brands, menuCategories }: { brands: Brand[]; menu
       </Panel>
 
       <div className="space-y-4">
+        {items.some((item) => item.isActive) ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void checklistPdf()}
+              className="vista-button-secondary flex min-h-11 items-center gap-2"
+              title="A blank sheet of the active items, to print and fill in by hand"
+            >
+              <FileDown aria-hidden="true" className="size-4" /> Checklist PDF
+            </button>
+          </div>
+        ) : null}
         {error ? (
           <p role="alert" className="text-sm font-bold text-serious">
             {error}
