@@ -229,9 +229,11 @@ function SlotCard({
   const active = slot.assignments.filter((assignment) => assignment.status === 'ACTIVE')
   const choices = detail.staff.filter((staff) => staff.status === 'ACTIVE' && !active.some((assignment) => assignment.staffId === staff.id))
   const clashes = detail.warnings.filter((warning) => warning.slotId === slot.id && warning.kind === 'OVERLAP')
-  // Who applied for this shift in the Team app and is not on it yet, first to apply first.
+  // Who applied for this shift and is not on it yet, in the order "Give shifts
+  // to applicants" uses: most shifts offered that week first, then first to apply.
+  const offered = (staffId: string) => detail.slots.filter((s) => s.applicants.some((a) => a.staffId === staffId)).length
   const applied = slot.applicants
-    .toSorted((a, b) => a.appliedAt.localeCompare(b.appliedAt))
+    .toSorted((a, b) => offered(b.staffId) - offered(a.staffId) || a.appliedAt.localeCompare(b.appliedAt))
     .flatMap((application) => choices.filter((staff) => staff.id === application.staffId))
   const others = choices.filter((staff) => !applied.includes(staff))
 
@@ -371,7 +373,7 @@ function SlotCard({
               <optgroup label="Applied for this shift">
                 {applied.map((staff) => (
                   <option key={staff.id} value={staff.id}>
-                    ✓ {staff.name}
+                    ✓ {staff.name} ({offered(staff.id)} shift{offered(staff.id) === 1 ? '' : 's'} offered)
                   </option>
                 ))}
               </optgroup>
