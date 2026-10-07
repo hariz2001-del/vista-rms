@@ -1,9 +1,11 @@
+import { Eye } from 'lucide-react'
 import { useState } from 'react'
 import { EmptyState } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { IS_DEMO } from '../lib/mode.ts'
 import { StockCountsTab } from './stock/StockCountsTab.tsx'
 import { StockListTab } from './stock/StockListTab.tsx'
+import { StockPosPreview } from './stock/StockPosPreview.tsx'
 
 type TabKey = 'counts' | 'list'
 
@@ -20,12 +22,27 @@ const TABS: Array<{ key: TabKey; label: string }> = [
  */
 export function StockScreen({ store }: { store: VistaStore }) {
   const [tab, setTab] = useState<TabKey>('counts')
+  const [posView, setPosView] = useState(false)
 
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <div className="border-b border-line pb-5">
-        <p className="page-kicker">Closing / store room</p>
-        <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Stock</h1>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <p className="page-kicker">Closing / store room</p>
+            <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Stock</h1>
+          </div>
+          {IS_DEMO ? null : (
+            <button
+              type="button"
+              onClick={() => setPosView(true)}
+              className="vista-button-secondary ml-auto flex min-h-11 items-center gap-2"
+              title="See the stock count exactly as the counter shows it"
+            >
+              <Eye aria-hidden="true" className="size-4" /> POS view
+            </button>
+          )}
+        </div>
         <p className="mt-2 max-w-3xl text-sm text-muted">
           A quick closing count from the counter, so tomorrow&rsquo;s restock is planned from what is actually
           left. Set up what gets counted under Stock list.
@@ -57,6 +74,7 @@ export function StockScreen({ store }: { store: VistaStore }) {
           </div>
           {tab === 'counts' ? <StockCountsTab today={store.today} /> : null}
           {tab === 'list' ? <StockListTab brands={store.brands} menuCategories={store.categories} /> : null}
+          {posView ? <StockPosPreview brands={store.brands} onClose={() => setPosView(false)} /> : null}
         </>
       )}
     </div>
