@@ -73,7 +73,13 @@ export function StockScreen({ store }: { store: VistaStore }) {
             ))}
           </div>
           {tab === 'counts' ? <StockCountsTab today={store.today} /> : null}
-          {tab === 'list' ? <StockListTab brands={store.brands} menuCategories={store.categories} /> : null}
+          {tab === 'list' ? (
+            <StockListTab
+              brands={store.brands}
+              menuCategories={store.categories}
+              businessName={store.settings.outletName || store.settings.businessName}
+            />
+          ) : null}
           {posView ? <StockPosPreview brands={store.brands} onClose={() => setPosView(false)} /> : null}
         </>
       )}

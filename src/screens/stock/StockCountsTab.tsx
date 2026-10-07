@@ -1,4 +1,4 @@
-import { ClipboardList, MessageSquareText } from 'lucide-react'
+import { ClipboardList, FileDown, MessageSquareText } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { DateRangePicker } from '../../components/DateRangePicker.tsx'
 import { EmptyState, Panel } from '../../components/primitives.tsx'
@@ -7,6 +7,7 @@ import { stockApi, type StockCount, type StockCountLine, type StockCountSummary 
 import { errorText } from '../../data/team-api.ts'
 import { BALANCES, formatCount, groupStock } from '../../domain/stock.ts'
 import { formatDate, type DateRange } from '../../domain/selectors.ts'
+import { downloadStockChecklist } from '../../lib/stock-pdf.ts'
 
 const ALL = ''
 
@@ -47,18 +48,40 @@ function BalanceMarks({ line }: { line: StockCountLine }) {
 }
 
 function Report({ count }: { count: StockCount }) {
+  const [problem, setProblem] = useState<string | null>(null)
+  async function pdf() {
+    setProblem(null)
+    try {
+      await downloadStockChecklist(
+        count.lines.map((line) => ({ ...line, brand: line.brandName })),
+        {
+          businessName: count.branchName,
+          filled: { date: formatDate(count.businessDate), countedBy: count.staffName, sentAt: clockText(count.submittedAt), remarks: count.remarks },
+        },
+        `closing-stock-${count.businessDate}.pdf`,
+      )
+    } catch (caught) {
+      setProblem(errorText(caught, 'The PDF could not be made. Try again.'))
+    }
+  }
   const groups = useMemo(
     () => groupStock(count.lines.map((line) => ({ ...line, brandKey: line.brandName }))),
     [count],
   )
   return (
     <div className="space-y-4">
-      <div className="border-b border-line pb-3">
-        <p className="page-kicker">{count.branchName}</p>
-        <h3 className="mt-1 text-2xl font-black">Closing stock · {formatDate(count.businessDate)}</h3>
-        <p className="text-sm font-semibold text-muted">
-          Counted by {count.staffName} · sent {clockText(count.submittedAt)}
-        </p>
+      <div className="flex flex-wrap items-start gap-3 border-b border-line pb-3">
+        <div>
+          <p className="page-kicker">{count.branchName}</p>
+          <h3 className="mt-1 text-2xl font-black">Closing stock · {formatDate(count.businessDate)}</h3>
+          <p className="text-sm font-semibold text-muted">
+            Counted by {count.staffName} · sent {clockText(count.submittedAt)}
+          </p>
+        </div>
+        <button type="button" onClick={() => void pdf()} className="vista-button-secondary ml-auto flex min-h-11 items-center gap-2">
+          <FileDown aria-hidden="true" className="size-4" /> Download PDF
+        </button>
+        {problem ? <p role="alert" className="w-full text-sm font-bold text-serious">{problem}</p> : null}
       </div>
 
       {count.remarks ? (
