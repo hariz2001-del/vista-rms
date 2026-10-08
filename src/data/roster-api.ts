@@ -58,7 +58,17 @@ export type RosterAssignment = {
   rateOverrideSen: number | null
   rateOverrideReason: string | null
   explanation: string | null
+  /** Extra to the shift's places, with their own times or just hours. */
+  isBackup: boolean
+  hoursOnly: boolean
+  /** This person's own times on the shift (a backup's may differ from the slot's). */
+  startTime: string
+  endTime: string
+  minutes: number
 }
+
+/** A backup's time: their own start and end, or just hours from the shift's start. */
+export type BackupTime = { startTime: string; endTime: string } | { minutes: number }
 
 export type RosterSlot = {
   id: string
@@ -73,6 +83,7 @@ export type RosterSlot = {
   roleTags: string[]
   workTypeId: string | null
   label: string | null
+  allowsBackup: boolean
   applicants: Array<{ staffId: string; appliedAt: string }>
   assignments: RosterAssignment[]
   openCoverage: { id: string; isUrgent: boolean; vacatedBy: string | null; askingName: string | null } | null
@@ -228,7 +239,7 @@ export type Adjustment = {
   createdAt: string
 }
 
-type SlotFields = Omit<SlotTemplate, 'weekday' | 'id'> & { date: string }
+type SlotFields = Omit<SlotTemplate, 'weekday' | 'id'> & { date: string; allowsBackup?: boolean }
 
 export const rosterApi = {
   scheduleSetup: () =>
@@ -271,6 +282,10 @@ export const rosterApi = {
     id: string,
     body: Partial<{ isLocked: boolean; workTypeId: string | null; rateOverrideSen: number | null; rateOverrideReason: string | null }>,
   ) => apiRequest<WeekDetail>('PATCH', `/rms/team/assignments/${id}`, body),
+  addBackup: (slotId: string, body: { staffId: string } & BackupTime) =>
+    apiRequest<WeekDetail>('POST', `/rms/team/slots/${slotId}/backups`, body),
+  setBackupTime: (assignmentId: string, body: BackupTime) =>
+    apiRequest<WeekDetail>('PATCH', `/rms/team/assignments/${assignmentId}/time`, body),
   unassign: (id: string, vacancy = true) => apiRequest<WeekDetail>('DELETE', `/rms/team/assignments/${id}?vacancy=${vacancy}`),
 
   coverage: () => apiRequest<{ coverage: Coverage[] }>('GET', '/rms/team/coverage'),

@@ -11,6 +11,7 @@ import {
   rosterApi,
   timeText,
   todayInKl,
+  type BackupTime,
   type RosterAssignment,
   type RosterSlot,
   type WeekDetail,
@@ -84,6 +85,213 @@ function NewWeek({ existing, onCreated }: { existing: WeekSummary[]; onCreated: 
 }
 
 /** Times, people needed, label and work type for a shift — adding one or editing one. */
+/** Their own times, or just hours from the shift's start. */
+function BackupTimeFields({
+  slot,
+  value,
+  onChange,
+}: {
+  slot: RosterSlot
+  value: BackupTime
+  onChange: (value: BackupTime) => void
+}) {
+  const hours = 'minutes' in value
+  return (
+    <div className="space-y-1">
+      <div role="radiogroup" aria-label="Backup time" className="grid grid-cols-2 gap-1">
+        {[
+          { key: 'times', label: 'Set times', on: !hours, pick: () => onChange({ startTime: slot.startTime, endTime: slot.endTime }) },
+          { key: 'hours', label: 'Just hours', on: hours, pick: () => onChange({ minutes: 120 }) },
+        ].map((option) => (
+          <button
+            key={option.key}
+            type="button"
+            role="radio"
+            aria-checked={option.on}
+            onClick={option.pick}
+            className={`min-h-8 border text-xs font-bold ${option.on ? 'border-rail bg-rail text-white' : 'border-line bg-surface'}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {'minutes' in value ? (
+        <label className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0.25}
+            max={16}
+            step={0.25}
+            value={value.minutes / 60}
+            onChange={(event) => onChange({ minutes: Math.round(Number(event.target.value) * 60) })}
+            className="vista-control w-20 px-1"
+            aria-label="Hours"
+          />
+          <span className="text-muted">hours, from {timeText(slot.startTime)}</span>
+        </label>
+      ) : (
+        <div className="space-y-1">
+          <TimeInput label="From" minuteStep={5} value={value.startTime} onChange={(startTime) => onChange({ ...value, startTime })} className="vista-control w-full px-1" />
+          <TimeInput label="To" minuteStep={5} value={value.endTime} onChange={(endTime) => onChange({ ...value, endTime })} className="vista-control w-full px-1" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Backup staff: extra to the places, added whenever they are needed (published
+ * or not), with their own times or just hours. Whoever applied for the shift
+ * is suggested first.
+ */
+function BackupSection({
+  slot,
+  backups,
+  choices,
+  applied,
+  offered,
+  onDetail,
+  onError,
+}: {
+  slot: RosterSlot
+  backups: RosterAssignment[]
+  choices: WeekDetail['staff']
+  applied: WeekDetail['staff']
+  offered: (staffId: string) => number
+  onDetail: (next: WeekDetail) => void
+  onError: (message: string) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [staffId, setStaffId] = useState('')
+  const [time, setTime] = useState<BackupTime>({ minutes: 120 })
+  const others = choices.filter((staff) => !applied.includes(staff))
+
+  async function run(action: () => Promise<WeekDetail>) {
+    try {
+      onDetail(await action())
+      return true
+    } catch (caught) {
+      onError(errorText(caught))
+      return false
+    }
+  }
+
+  return (
+    <div className="mt-2 border-t border-dashed border-line pt-2">
+      <p className="text-[0.7rem] font-bold uppercase tracking-wider text-muted">Backup</p>
+      <ul className="mt-1 space-y-1">
+        {backups.map((backup) => (
+          <li key={backup.id}>
+            <div className="flex items-center gap-1 border border-dashed border-line bg-surface px-2 py-1 text-sm">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-bold">{backup.staffName}</span>
+                <span className="block text-xs text-muted">
+                  {backup.hoursOnly
+                    ? `${hoursText(backup.minutes)} from ${timeText(backup.startTime)}`
+                    : `${timeText(backup.startTime)}–${timeText(backup.endTime)}`}
+                </span>
+              </span>
+              <button
+                type="button"
+                aria-label={`Change ${backup.staffName}'s time`}
+                title="Change time"
+                onClick={() => {
+                  setEditing(editing === backup.id ? null : backup.id)
+                  setTime(backup.hoursOnly ? { minutes: backup.minutes } : { startTime: backup.startTime, endTime: backup.endTime })
+                }}
+                className="grid size-7 place-items-center text-muted hover:text-ink"
+              >
+                <Pencil aria-hidden="true" className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={`Take ${backup.staffName} off as backup`}
+                onClick={() => {
+                  if (window.confirm(`Take ${backup.staffName} off as backup?`)) void run(() => rosterApi.unassign(backup.id, false))
+                }}
+                className="grid size-7 place-items-center text-muted hover:text-critical"
+              >
+                <X aria-hidden="true" className="size-3.5" />
+              </button>
+            </div>
+            {editing === backup.id ? (
+              <div className="mt-1 space-y-1 border border-rail/40 bg-canvas p-2 text-xs">
+                <BackupTimeFields slot={slot} value={time} onChange={setTime} />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (await run(() => rosterApi.setBackupTime(backup.id, time))) setEditing(null)
+                  }}
+                  className="vista-button-primary min-h-8 w-full"
+                >
+                  Save time
+                </button>
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+
+      {adding ? (
+        <div className="mt-1 space-y-1 border border-rail/40 bg-canvas p-2 text-xs">
+          <select value={staffId} onChange={(event) => setStaffId(event.target.value)} aria-label="Who" className="vista-control w-full px-1">
+            <option value="">Choose who…</option>
+            {applied.length > 0 ? (
+              <optgroup label="Applied for this shift">
+                {applied.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    ✓ {staff.name} ({offered(staff.id)} offered)
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            <optgroup label={applied.length > 0 ? 'Did not apply' : 'Staff'}>
+              {others.map((staff) => (
+                <option key={staff.id} value={staff.id}>
+                  {staff.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+          <BackupTimeFields slot={slot} value={time} onChange={setTime} />
+          <div className="flex gap-1">
+            <button
+              type="button"
+              disabled={!staffId}
+              onClick={async () => {
+                if (await run(() => rosterApi.addBackup(slot.id, { staffId, ...time }))) {
+                  setAdding(false)
+                  setStaffId('')
+                }
+              }}
+              className="vista-button-primary min-h-8 flex-1 disabled:opacity-50"
+            >
+              Add backup
+            </button>
+            <button type="button" onClick={() => setAdding(false)} className="vista-button-secondary min-h-8">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : choices.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => {
+            setAdding(true)
+            setTime({ minutes: 120 })
+            // The first to have applied is the likely pick.
+            setStaffId(applied[0]?.id ?? '')
+          }}
+          className="mt-1 flex min-h-8 w-full items-center justify-center gap-1 border border-dashed border-line text-xs font-bold text-muted hover:text-ink"
+        >
+          <Plus aria-hidden="true" className="size-3.5" /> Add backup
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function ShiftForm({
   initial,
   workTypes,
@@ -91,10 +299,17 @@ function ShiftForm({
   onSubmit,
   onCancel,
 }: {
-  initial: { startTime: string; endTime: string; requiredStaff: number; label: string | null; workTypeId: string | null }
+  initial: { startTime: string; endTime: string; requiredStaff: number; label: string | null; workTypeId: string | null; allowsBackup?: boolean }
   workTypes: WorkType[]
   submitLabel: string
-  onSubmit: (value: { startTime: string; endTime: string; requiredStaff: number; label: string | null; workTypeId: string | null }) => Promise<void>
+  onSubmit: (value: {
+    startTime: string
+    endTime: string
+    requiredStaff: number
+    label: string | null
+    workTypeId: string | null
+    allowsBackup: boolean
+  }) => Promise<void>
   onCancel: () => void
 }) {
   const [startTime, setStart] = useState(initial.startTime)
@@ -102,12 +317,13 @@ function ShiftForm({
   const [requiredStaff, setRequired] = useState(initial.requiredStaff)
   const [label, setLabel] = useState(initial.label ?? '')
   const [workTypeId, setWorkType] = useState(initial.workTypeId ?? '')
+  const [allowsBackup, setAllowsBackup] = useState(initial.allowsBackup ?? false)
 
   return (
     <form
       onSubmit={async (event) => {
         event.preventDefault()
-        await onSubmit({ startTime, endTime, requiredStaff, label: label.trim() || null, workTypeId: workTypeId || null })
+        await onSubmit({ startTime, endTime, requiredStaff, label: label.trim() || null, workTypeId: workTypeId || null, allowsBackup })
       }}
       className="space-y-2 border border-rail/40 bg-canvas p-2 text-xs"
     >
@@ -139,6 +355,13 @@ function ShiftForm({
       <label className="block">
         <span className="vista-field-label">Label (optional)</span>
         <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. Closing" maxLength={40} className="vista-control w-full px-1" />
+      </label>
+      <label className="flex items-start gap-2 py-1">
+        <input type="checkbox" checked={allowsBackup} onChange={(event) => setAllowsBackup(event.target.checked)} className="mt-0.5 size-4" />
+        <span>
+          <span className="font-bold">Allow backup staff</span>
+          <span className="block text-muted">Extra people added later, with their own times or hours.</span>
+        </span>
       </label>
       <div className="flex gap-1">
         <button type="submit" className="vista-button-primary min-h-9 flex-1">
@@ -226,8 +449,11 @@ function SlotCard({
 }) {
   const [editingShift, setEditingShift] = useState(false)
   const [editingPay, setEditingPay] = useState<string | null>(null)
-  const active = slot.assignments.filter((assignment) => assignment.status === 'ACTIVE')
-  const choices = detail.staff.filter((staff) => staff.status === 'ACTIVE' && !active.some((assignment) => assignment.staffId === staff.id))
+  const onShift = slot.assignments.filter((assignment) => assignment.status === 'ACTIVE')
+  // The places; backups are extra and listed on their own.
+  const active = onShift.filter((assignment) => !assignment.isBackup)
+  const backups = onShift.filter((assignment) => assignment.isBackup)
+  const choices = detail.staff.filter((staff) => staff.status === 'ACTIVE' && !onShift.some((assignment) => assignment.staffId === staff.id))
   const clashes = detail.warnings.filter((warning) => warning.slotId === slot.id && warning.kind === 'OVERLAP')
   // Who applied for this shift and is not on it yet, in the order "Give shifts
   // to applicants" uses: most shifts offered that week first, then first to apply.
@@ -395,6 +621,10 @@ function SlotCard({
             ))
           )}
         </select>
+      ) : null}
+
+      {slot.allowsBackup ? (
+        <BackupSection slot={slot} backups={backups} choices={choices} applied={applied} offered={offered} onDetail={onDetail} onError={onError} />
       ) : null}
 
       {clashes.map((warning, index) => (
@@ -620,7 +850,8 @@ function WeekView({
   }
   const days = Array.from({ length: 7 }, (_, index) => addDaysTo(data.week.weekStart, index))
   const unfilled = data.slots.reduce(
-    (sum, slot) => sum + Math.max(0, slot.requiredStaff - slot.assignments.filter((assignment) => assignment.status === 'ACTIVE').length),
+    (sum, slot) =>
+      sum + Math.max(0, slot.requiredStaff - slot.assignments.filter((assignment) => assignment.status === 'ACTIVE' && !assignment.isBackup).length),
     0,
   )
 
