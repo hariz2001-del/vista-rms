@@ -84,6 +84,7 @@ export const teamApi = {
   saveAttributes: (id: string, body: Partial<StaffAttributes>) =>
     apiRequest<{ staff: Staff }>('PUT', `/rms/team/staff/${id}/attributes`, body),
   deleteStaff: (id: string) => apiRequest<{ ok: true }>('DELETE', `/rms/team/staff/${id}`),
+  viewAs: (id: string) => apiRequest<{ token: string }>('POST', `/rms/team/staff/${id}/view`),
   viewPin: (id: string) => apiRequest<{ pin: string | null; viewable: boolean }>('GET', `/rms/team/staff/${id}/pin`),
   resetPin: (id: string, pin?: string) =>
     apiRequest<{ pin: string }>('POST', `/rms/team/staff/${id}/pin`, pin ? { pin } : {}),

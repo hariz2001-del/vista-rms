@@ -1,3 +1,4 @@
+import { Smartphone } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { EmptyState, SectionHeading } from '../components/primitives.tsx'
 import { IS_DEMO } from '../lib/mode.ts'
@@ -7,6 +8,7 @@ import { RosterTab } from './team/RosterTab.tsx'
 import { StaffTab } from './team/StaffTab.tsx'
 import { GettingStarted } from './team/GettingStarted.tsx'
 import { TeamSettingsTab } from './team/TeamSettingsTab.tsx'
+import { TeamView } from './team/TeamView.tsx'
 
 /*
  * Kept deliberately small. The Cover, Timetable and History screens still
@@ -39,13 +41,27 @@ export function TeamScreen() {
   const [tab, setTab] = useState<TabKey>('roster')
   // Bumped when the checklist changes something, so the open tab reloads too.
   const [version, setVersion] = useState(0)
+  const [viewing, setViewing] = useState(false)
 
   return (
     <div className="space-y-5">
-      <SectionHeading
-        title="Team"
-        hint="Staff sign in at team.vistahub.my with their 4-digit PIN to apply for shifts and see their roster and pay."
-      />
+      <div className="flex flex-wrap items-start gap-3">
+        <SectionHeading
+          title="Team"
+          hint="Staff sign in at team.vistahub.my with their 4-digit PIN to apply for shifts and see their roster and pay."
+        />
+        {IS_DEMO ? null : (
+          <button
+            type="button"
+            onClick={() => setViewing(true)}
+            className="vista-button-secondary ml-auto flex min-h-11 items-center gap-2"
+            title="See the staff app as one of your staff sees it"
+          >
+            <Smartphone aria-hidden="true" className="size-4" /> Team view
+          </button>
+        )}
+      </div>
+      {viewing ? <TeamView onClose={() => setViewing(false)} /> : null}
 
       {IS_DEMO ? (
         <EmptyState
