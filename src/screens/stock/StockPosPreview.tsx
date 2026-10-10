@@ -47,7 +47,7 @@ function CountBox({ label, value, onChange }: { label: string; value: string; on
 function Row({ item, entry, onChange }: { item: StockItem; entry: Entry; onChange: (patch: Partial<Entry>) => void }) {
   const done = Boolean(entry.unopened.trim() || entry.opened.trim() || entry.balance)
   return (
-    <li className="grid grid-cols-2 items-center gap-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_15rem]">
+    <li className="grid grid-cols-2 items-center gap-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_6.5rem_18rem]">
       <div className="col-span-2 min-w-0 md:col-span-1">
         <p className="text-lg font-black leading-tight">
           {done ? <span className="mr-1 text-green-600">✓</span> : null}
@@ -63,17 +63,9 @@ function Row({ item, entry, onChange }: { item: StockItem; entry: Entry; onChang
       ) : (
         <span className="hidden md:block" />
       )}
-      {item.trackOpened ? (
-        <label className="block">
-          <span className="block text-center text-[0.65rem] font-black uppercase tracking-wider text-slate-400">Opened</span>
-          <CountBox label={`${item.name} opened`} value={entry.opened} onChange={(opened) => onChange({ opened })} />
-        </label>
-      ) : (
-        <span className="hidden md:block" />
-      )}
       {item.trackBalance ? (
         <div className="col-span-2 md:col-span-1">
-          <span className="block text-center text-[0.65rem] font-black uppercase tracking-wider text-slate-400">Balance</span>
+          <span className="block text-center text-[0.65rem] font-black uppercase tracking-wider text-slate-400">Opened balance</span>
           <StockLevelBar
             label={`${item.name} balance`}
             value={entry.balance}

@@ -89,13 +89,13 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
   const brandCount = groups.length
   for (const brand of groups) {
     if (brandCount > 1) {
-      rows.push([{ content: brand.brandKey, colSpan: 4, styles: { fontStyle: 'bold', fontSize: 12, fillColor: [255, 255, 255], cellPadding: { top: 4, bottom: 1, left: 1 } } }])
+      rows.push([{ content: brand.brandKey, colSpan: 3, styles: { fontStyle: 'bold', fontSize: 12, fillColor: [255, 255, 255], cellPadding: { top: 4, bottom: 1, left: 1 } } }])
     }
     for (const category of brand.categories) {
-      rows.push([{ content: category.category.toUpperCase(), colSpan: 4, styles: { fontStyle: 'bold', fontSize: 8.5, fillColor: SHADE, textColor: INK } }])
+      rows.push([{ content: category.category.toUpperCase(), colSpan: 3, styles: { fontStyle: 'bold', fontSize: 8.5, fillColor: SHADE, textColor: INK } }])
       for (const group of category.subcategories) {
         if (group.subcategory) {
-          rows.push([{ content: group.subcategory, colSpan: 4, styles: { fontStyle: 'bold', fontSize: 8, textColor: MUTED, cellPadding: { top: 2, bottom: 0.5, left: 3 } } }])
+          rows.push([{ content: group.subcategory, colSpan: 3, styles: { fontStyle: 'bold', fontSize: 8, textColor: MUTED, cellPadding: { top: 2, bottom: 0.5, left: 3 } } }])
         }
         for (const line of group.items) {
           // The unit sits under the item's name, so a figure is just the number.
@@ -107,7 +107,6 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
           rows.push([
             { content: line.name, unit: line.unitLabel },
             quantity(line.trackUnopened, line.unopenedMilli),
-            quantity(line.trackOpened, line.openedMilli),
             line.trackBalance
               ? { content: '', kind: 'balance', balance: line.balance ?? null, note: filled ? noteFor(line) : null }
               : filled && noteFor(line)
@@ -122,7 +121,7 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
   autoTable(doc, {
     startY: y,
     margin: { left: margin, right: margin, bottom: 16 },
-    head: [['Item', 'Unopened', 'Opened', 'Balance']],
+    head: [['Item', 'Unopened', 'Opened balance']],
     body: rows as never,
     theme: 'grid',
     styles: { font: 'helvetica', fontSize: 10, textColor: INK, lineColor: LINE, lineWidth: 0.2, cellPadding: 2.2, valign: 'middle', minCellHeight: 10 },
@@ -130,8 +129,7 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
     columnStyles: {
       0: { cellWidth: 'auto', fontStyle: 'bold' },
       1: { cellWidth: 30, halign: 'center' },
-      2: { cellWidth: 26, halign: 'center' },
-      3: { cellWidth: 66, halign: 'center' },
+      2: { cellWidth: 66, halign: 'center' },
     },
     didParseCell: (data) => {
       if (data.section !== 'body') return

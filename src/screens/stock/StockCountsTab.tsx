@@ -84,22 +84,20 @@ function Report({ count }: { count: StockCount }) {
                 <colgroup>
                   <col />
                   <col className="w-28" />
-                  <col className="w-20" />
-                  <col className="w-40" />
+                  <col className="w-44" />
                 </colgroup>
                 <thead>
                   <tr className="text-left text-[0.7rem] uppercase tracking-[0.06em] text-muted">
                     <th className="px-3 py-1 font-bold">Item</th>
                     <th className="px-2 py-1 text-right font-bold">Unopened</th>
-                    <th className="px-2 py-1 text-right font-bold">Opened</th>
-                    <th className="px-3 py-1 text-right font-bold">Balance</th>
+                    <th className="px-3 py-1 text-right font-bold">Opened balance</th>
                   </tr>
                 </thead>
                 {category.subcategories.map((group) => (
                   <tbody key={group.subcategory ?? '—'}>
                     {group.subcategory ? (
                       <tr>
-                        <td colSpan={4} className="px-3 pt-2 text-xs font-bold text-muted">
+                        <td colSpan={3} className="px-3 pt-2 text-xs font-bold text-muted">
                           {group.subcategory}
                         </td>
                       </tr>
@@ -109,9 +107,6 @@ function Report({ count }: { count: StockCount }) {
                         <td className="px-3 py-1.5 font-semibold text-ink">{line.name}</td>
                         <td className="px-2 py-1.5 text-right">
                           {line.trackUnopened ? quantity(line.unopenedMilli, line.unitLabel) : null}
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          {line.trackOpened ? quantity(line.openedMilli, null) : null}
                         </td>
                         <td className="px-3 py-1.5 text-right">
                           {line.trackBalance ? (
