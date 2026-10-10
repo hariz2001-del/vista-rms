@@ -3,9 +3,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { DateRangePicker } from '../../components/DateRangePicker.tsx'
 import { EmptyState, Panel } from '../../components/primitives.tsx'
 import { clockText } from '../../data/roster-api.ts'
-import { stockApi, type StockCount, type StockCountLine, type StockCountSummary } from '../../data/stock-api.ts'
+import { stockApi, type StockCount, type StockCountSummary } from '../../data/stock-api.ts'
 import { errorText } from '../../data/team-api.ts'
-import { BALANCES, formatCount, groupStock } from '../../domain/stock.ts'
+import { StockLevelReading } from '../../components/StockLevelBar.tsx'
+import { formatCount, groupStock } from '../../domain/stock.ts'
 import { formatDate, type DateRange } from '../../domain/selectors.ts'
 import { downloadStockChecklist } from '../../lib/stock-pdf.ts'
 
@@ -23,26 +24,6 @@ function quantity(milli: number | null, unit: string | null) {
     <span className="font-black tabular text-ink">
       {formatCount(milli)}
       {unit ? <span className="font-semibold text-muted"> {unit}</span> : null}
-    </span>
-  )
-}
-
-/** The three balance marks, the chosen one filled — as the paper sheet had them. */
-function BalanceMarks({ line }: { line: StockCountLine }) {
-  if (line.balance === null) return <span className="text-muted">—</span>
-  return (
-    <span className="inline-flex gap-1" aria-label={BALANCES.find((b) => b.value === line.balance)?.long}>
-      {BALANCES.map((balance) => (
-        <span
-          key={balance.value}
-          aria-hidden="true"
-          className={`min-w-9 border px-1.5 py-0.5 text-center text-xs font-black ${
-            balance.value === line.balance ? 'border-ink bg-ink text-white' : 'border-line text-slate-300'
-          }`}
-        >
-          {balance.label}
-        </span>
-      ))}
     </span>
   )
 }
@@ -133,7 +114,7 @@ function Report({ count }: { count: StockCount }) {
                           {line.trackOpened ? quantity(line.openedMilli, null) : null}
                         </td>
                         <td className="px-3 py-1.5 text-right">
-                          {line.trackBalance ? <BalanceMarks line={line} /> : null}
+                          {line.trackBalance ? <StockLevelReading balance={line.balance} /> : null}
                         </td>
                       </tr>
                     ))}

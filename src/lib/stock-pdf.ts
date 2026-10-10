@@ -1,4 +1,4 @@
-import { BALANCES, formatCount, groupStock, type StockBalance } from '../domain/stock.ts'
+import { LEVELS, formatCount, groupStock, levelOf, type StockBalance } from '../domain/stock.ts'
 
 /**
  * Closing stock as a printable A4 checklist, made in the browser. One layout,
@@ -117,7 +117,7 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
       0: { cellWidth: 'auto', fontStyle: 'bold' },
       1: { cellWidth: 30, halign: 'center' },
       2: { cellWidth: 26, halign: 'center' },
-      3: { cellWidth: 52, halign: 'center' },
+      3: { cellWidth: 66, halign: 'center' },
     },
     didParseCell: (data) => {
       if (data.section !== 'body') return
@@ -150,27 +150,53 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
         doc.rect(x + 4, top + 1.8, width - 8, height - 3.6)
       }
       if (raw?.kind === 'balance') {
-        // Three boxes, > 1/2, 1/2, < 1/2; the counted one filled in.
-        const box = 4.2
-        const step = width / 3
         doc.setLineWidth(0.3)
-        BALANCES.forEach((balance, index) => {
-          const cx = x + step * index + 3
-          const cy = top + height / 2 - box / 2
-          const chosen = raw.balance === balance.value
-          doc.setDrawColor(...INK)
-          if (chosen) {
-            doc.setFillColor(...INK)
-            doc.rect(cx, cy, box, box, 'FD')
-          } else {
+        if (!filled) {
+          // A blank sheet: five boxes, 0% to 100%, to tick by hand.
+          const box = 3.6
+          const step = (width - 4) / LEVELS.length
+          LEVELS.forEach((level, index) => {
+            const cx = x + 2 + step * index
+            const cy = top + height / 2 - box / 2
+            doc.setDrawColor(...INK)
             doc.rect(cx, cy, box, box)
+            doc.setFontSize(7)
+            doc.setTextColor(...INK)
+            doc.text(level.label, cx + box + 0.8, cy + box - 0.6)
+          })
+        } else {
+          // A sent count: the bar alone, filled to the level in its colour, and its note.
+          const level = levelOf(raw.balance ?? null)
+          const barX = x + 3
+          const barW = width - 6
+          const barH = 3.6
+          const barY = top + (level?.note ? height / 2 - barH : height / 2 - barH / 2)
+          if (level) {
+            const hex = (value: string): [number, number, number] => [
+              parseInt(value.slice(1, 3), 16),
+              parseInt(value.slice(3, 5), 16),
+              parseInt(value.slice(5, 7), 16),
+            ]
+            doc.setFillColor(...(level.pct === 0 ? hex('#fee2e2') : hex('#e5e7eb')))
+            doc.setDrawColor(...(level.pct === 0 ? hex(level.colour) : hex('#d1d5db')))
+            doc.roundedRect(barX, barY, barW, barH, 1.2, 1.2, 'FD')
+            if (level.pct > 0) {
+              doc.setFillColor(...hex(level.colour))
+              doc.roundedRect(barX, barY, (barW * level.pct) / 100, barH, 1.2, 1.2, 'F')
+            }
+            if (level.note) {
+              doc.setFont('helvetica', 'bold')
+              doc.setFontSize(7)
+              doc.setTextColor(...hex(level.colour))
+              doc.text(level.note.toUpperCase(), barX + barW, barY + barH + 3.2, { align: 'right' })
+              doc.setFont('helvetica', 'normal')
+            }
+          } else {
+            doc.setFontSize(10)
+            doc.setTextColor(...INK)
+            doc.text('-', x + width / 2, top + height / 2 + 1, { align: 'center' })
           }
-          doc.setFontSize(9)
-          doc.setFont('helvetica', chosen ? 'bold' : 'normal')
-          doc.setTextColor(...(filled && !chosen ? MUTED : INK))
-          doc.text(balance.label, cx + box + 1.5, cy + box - 0.6)
-        })
-        doc.setFont('helvetica', 'normal')
+        }
         doc.setTextColor(...INK)
       }
     },
