@@ -2,7 +2,8 @@ import { ClipboardList, Eye, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { stockApi, type StockItem } from '../../data/stock-api.ts'
 import { teamApi, useLoad } from '../../data/team-api.ts'
-import { BALANCES, groupStock, parseCountMilli, type StockBalance } from '../../domain/stock.ts'
+import { StockLevelBar } from '../../components/StockLevelBar.tsx'
+import { groupStock, impliedBalance, parseCountMilli, stockNote, type StockBalance } from '../../domain/stock.ts'
 import type { Brand } from '../../domain/types.ts'
 
 /**
@@ -15,6 +16,15 @@ const POS_INK = '#101826'
 
 type Entry = { unopened: string; opened: string; balance: StockBalance | null }
 const EMPTY: Entry = { unopened: '', opened: '', balance: null }
+
+/** The typed counts as numbers: blank or not a number reads as unknown. */
+function milliOf(entry: Entry): { unopenedMilli: number | null; openedMilli: number | null } {
+  const read = (value: string) => {
+    const milli = parseCountMilli(value)
+    return typeof milli === 'number' ? milli : null
+  }
+  return { unopenedMilli: read(entry.unopened), openedMilli: read(entry.opened) }
+}
 
 function CountBox({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const invalid = parseCountMilli(value) === 'invalid'
@@ -64,28 +74,24 @@ function Row({ item, entry, onChange }: { item: StockItem; entry: Entry; onChang
       {item.trackBalance ? (
         <div className="col-span-2 md:col-span-1">
           <span className="block text-center text-[0.65rem] font-black uppercase tracking-wider text-slate-400">Balance</span>
-          <div role="group" aria-label={`${item.name} balance`} className="grid grid-cols-3 gap-1.5">
-            {BALANCES.map((balance) => {
-              const on = entry.balance === balance.value
-              return (
-                <button
-                  key={balance.value}
-                  type="button"
-                  aria-pressed={on}
-                  aria-label={balance.long}
-                  onClick={() => onChange({ balance: on ? null : balance.value })}
-                  className={`h-14 rounded-xl border-2 text-xl font-black ${
-                    on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white hover:border-slate-400'
-                  }`}
-                >
-                  {balance.label}
-                </button>
-              )
-            })}
-          </div>
+          <StockLevelBar
+            label={`${item.name} balance`}
+            value={entry.balance}
+            note={stockNote({ ...item, ...milliOf(entry), balance: entry.balance })}
+            onChange={(balance) => onChange({ balance })}
+          />
         </div>
       ) : (
-        <span className="hidden md:block" />
+        (() => {
+          const note = stockNote({ ...item, ...milliOf(entry), balance: null })
+          return note ? (
+            <p className="col-span-2 text-right text-xs font-black uppercase tracking-wider md:col-span-1" style={{ color: note.colour }}>
+              {note.text}
+            </p>
+          ) : (
+            <span className="hidden md:block" />
+          )
+        })()
       )}
     </li>
   )
@@ -114,7 +120,12 @@ export function StockPosPreview({ brands, onClose }: { brands: Brand[]; onClose:
   }).length
 
   function update(id: string, patch: Partial<Entry>) {
-    setEntries((current) => ({ ...current, [id]: { ...(current[id] ?? EMPTY), ...patch } }))
+    const item = items.find((candidate) => candidate.id === id)
+    setEntries((current) => {
+      const next = { ...(current[id] ?? EMPTY), ...patch }
+      if (item && !('balance' in patch)) next.balance = impliedBalance({ ...item, ...milliOf(next), balance: next.balance })
+      return { ...current, [id]: next }
+    })
   }
 
   return (
