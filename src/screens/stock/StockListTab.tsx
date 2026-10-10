@@ -12,8 +12,7 @@ const fieldClass =
 
 const TRACKING = [
   { key: 'trackUnopened', label: 'Unopened qty', hint: 'Sealed packs, bottles, tubs' },
-  { key: 'trackOpened', label: 'Opened qty', hint: 'How many are open' },
-  { key: 'trackBalance', label: 'Balance', hint: '> ½ · ½ · < ½ of the open one' },
+  { key: 'trackBalance', label: 'Opened balance', hint: 'How much of the open one is left: 0–100%' },
 ] as const
 
 type Draft = StockItemInput
@@ -428,8 +427,7 @@ export function StockListTab({
                             <p className="text-xs font-semibold text-muted">
                               {[
                                 item.trackUnopened ? 'Unopened' : null,
-                                item.trackOpened ? 'Opened' : null,
-                                item.trackBalance ? 'Balance' : null,
+                                item.trackBalance ? 'Opened balance' : null,
                               ]
                                 .filter(Boolean)
                                 .join(' · ')}
