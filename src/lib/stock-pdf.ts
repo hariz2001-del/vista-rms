@@ -1,4 +1,4 @@
-import { LEVELS, formatCount, groupStock, levelOf, type StockBalance } from '../domain/stock.ts'
+import { LEVELS, formatCount, groupStock, levelOf, stockNote, type StockBalance, type StockNote } from '../domain/stock.ts'
 
 /**
  * Closing stock as a printable A4 checklist, made in the browser. One layout,
@@ -44,6 +44,16 @@ type Cell = {
   balance?: StockBalance | null
   /** Drawn small and grey under the item's name. */
   unit?: string | null
+  /** Finished or low stock, under the bar (or in place of it). */
+  note?: StockNote | null
+}
+
+function noteFor(line: ChecklistLine): StockNote | null {
+  return stockNote({ ...line, unopenedMilli: line.unopenedMilli ?? null, openedMilli: line.openedMilli ?? null, balance: line.balance ?? null })
+}
+
+function hexRgb(value: string): [number, number, number] {
+  return [parseInt(value.slice(1, 3), 16), parseInt(value.slice(3, 5), 16), parseInt(value.slice(5, 7), 16)]
 }
 
 export async function downloadStockChecklist(lines: ChecklistLine[], header: ChecklistHeader, fileName: string): Promise<void> {
@@ -98,7 +108,11 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
             { content: line.name, unit: line.unitLabel },
             quantity(line.trackUnopened, line.unopenedMilli),
             quantity(line.trackOpened, line.openedMilli),
-            line.trackBalance ? { content: '', kind: 'balance', balance: line.balance ?? null } : { content: '', kind: 'na' },
+            line.trackBalance
+              ? { content: '', kind: 'balance', balance: line.balance ?? null, note: filled ? noteFor(line) : null }
+              : filled && noteFor(line)
+                ? { content: noteFor(line)!.text.toUpperCase(), styles: { fontStyle: 'bold', fontSize: 7, textColor: hexRgb(noteFor(line)!.colour), halign: 'right' } }
+                : { content: '', kind: 'na' },
           ])
         }
       }
@@ -170,7 +184,7 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
           const barX = x + 3
           const barW = width - 6
           const barH = 3.6
-          const barY = top + (level?.note ? height / 2 - barH : height / 2 - barH / 2)
+          const barY = top + (raw.note ? height / 2 - barH : height / 2 - barH / 2)
           if (level) {
             const hex = (value: string): [number, number, number] => [
               parseInt(value.slice(1, 3), 16),
@@ -184,11 +198,11 @@ export async function downloadStockChecklist(lines: ChecklistLine[], header: Che
               doc.setFillColor(...hex(level.colour))
               doc.roundedRect(barX, barY, (barW * level.pct) / 100, barH, 1.2, 1.2, 'F')
             }
-            if (level.note) {
+            if (raw.note) {
               doc.setFont('helvetica', 'bold')
               doc.setFontSize(7)
-              doc.setTextColor(...hex(level.colour))
-              doc.text(level.note.toUpperCase(), barX + barW, barY + barH + 3.2, { align: 'right' })
+              doc.setTextColor(...hex(raw.note.colour))
+              doc.text(raw.note.text.toUpperCase(), barX + barW, barY + barH + 3.2, { align: 'right' })
               doc.setFont('helvetica', 'normal')
             }
           } else {

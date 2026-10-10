@@ -1,4 +1,4 @@
-import { LEVELS, levelOf, type StockBalance } from '../domain/stock.ts'
+import { LEVELS, levelOf, type StockBalance, type StockNote } from '../domain/stock.ts'
 
 /**
  * How full the open one is, as a bar of five steps — 0%, 25%, 50%, 75%,
@@ -8,10 +8,13 @@ import { LEVELS, levelOf, type StockBalance } from '../domain/stock.ts'
 export function StockLevelBar({
   label,
   value,
+  note,
   onChange,
 }: {
   label: string
   value: StockBalance | null
+  /** Finished or low, worked out with the unopened count (stockNote). */
+  note: StockNote | null
   onChange: (value: StockBalance | null) => void
 }) {
   const level = levelOf(value)
@@ -51,9 +54,9 @@ export function StockLevelBar({
           })}
         </div>
       </div>
-      {level?.note ? (
-        <p className="mt-1 text-right text-xs font-black uppercase tracking-wider" style={{ color: level.colour }}>
-          {level.note}
+      {note ? (
+        <p className="mt-1 text-right text-xs font-black uppercase tracking-wider" style={{ color: note.colour }}>
+          {note.text}
         </p>
       ) : null}
     </div>
@@ -61,14 +64,14 @@ export function StockLevelBar({
 }
 
 /** The level as a report shows it: the bar alone, filled and coloured, and its note. */
-export function StockLevelReading({ balance }: { balance: StockBalance | null }) {
+export function StockLevelReading({ balance, note }: { balance: StockBalance | null; note: StockNote | null }) {
   const level = levelOf(balance)
   if (!level) return <span className="text-muted">—</span>
   return (
     <span className="inline-flex flex-col items-end gap-0.5" title={level.label}>
       <span
         role="img"
-        aria-label={`${level.label}${level.note ? `, ${level.note}` : ''}`}
+        aria-label={`${level.label}${note ? `, ${note.text}` : ''}`}
         className="relative block h-3.5 w-32 overflow-hidden rounded-full border"
         style={{ backgroundColor: level.pct === 0 ? '#fee2e2' : '#e5e7eb', borderColor: level.pct === 0 ? level.colour : '#d1d5db' }}
       >
@@ -78,9 +81,9 @@ export function StockLevelReading({ balance }: { balance: StockBalance | null })
           <span key={mark} aria-hidden="true" className="absolute inset-y-0 w-px bg-white/70" style={{ left: `${mark}%` }} />
         ))}
       </span>
-      {level.note ? (
-        <span className="text-[0.65rem] font-black uppercase tracking-wider" style={{ color: level.colour }}>
-          {level.note}
+      {note ? (
+        <span className="text-[0.65rem] font-black uppercase tracking-wider" style={{ color: note.colour }}>
+          {note.text}
         </span>
       ) : null}
     </span>

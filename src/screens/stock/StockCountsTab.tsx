@@ -6,7 +6,7 @@ import { clockText } from '../../data/roster-api.ts'
 import { stockApi, type StockCount, type StockCountSummary } from '../../data/stock-api.ts'
 import { errorText } from '../../data/team-api.ts'
 import { StockLevelReading } from '../../components/StockLevelBar.tsx'
-import { formatCount, groupStock } from '../../domain/stock.ts'
+import { formatCount, groupStock, stockNote } from '../../domain/stock.ts'
 import { formatDate, type DateRange } from '../../domain/selectors.ts'
 import { downloadStockChecklist } from '../../lib/stock-pdf.ts'
 
@@ -114,7 +114,13 @@ function Report({ count }: { count: StockCount }) {
                           {line.trackOpened ? quantity(line.openedMilli, null) : null}
                         </td>
                         <td className="px-3 py-1.5 text-right">
-                          {line.trackBalance ? <StockLevelReading balance={line.balance} /> : null}
+                          {line.trackBalance ? (
+                            <StockLevelReading balance={line.balance} note={stockNote(line)} />
+                          ) : stockNote(line) ? (
+                            <span className="text-[0.65rem] font-black uppercase tracking-wider" style={{ color: stockNote(line)!.colour }}>
+                              {stockNote(line)!.text}
+                            </span>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
