@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Panel, SectionHeading } from '../components/primitives.tsx'
+import { IS_DEMO } from '../lib/mode.ts'
+import { SarangAiPanel } from './SarangAiPanel.tsx'
 import type { VistaStore } from '../data/store.ts'
 
 /** 0 → "00:00 (midnight)", 5 → "05:00", 12 → "12:00". */
@@ -326,6 +328,8 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
       {showSplit ? <SplitPanels store={store} food={food} drinks={drinks} /> : null}
 
       <CounterPanel store={store} />
+
+      {IS_DEMO ? null : <SarangAiPanel />}
     </div>
   )
 }
