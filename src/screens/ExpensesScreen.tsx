@@ -1,6 +1,7 @@
 import { HandCoins, Pencil, Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
+import { ExpenseReceipt } from '../components/ExpenseReceipt.tsx'
 import { OwedToPartners } from '../components/OwedToPartners.tsx'
 import { CATEGORIES, ExpenseForm, PAYMENT_METHODS } from '../components/ExpenseForm.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
@@ -185,6 +186,7 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
                     ) : null}
 
                     <Money sen={expense.amountSen} className="text-sm font-black" />
+                    <ExpenseReceipt expense={expense} />
 
                     {canChange(expense) ? (
                       <div className="flex">

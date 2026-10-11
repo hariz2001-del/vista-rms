@@ -1,6 +1,7 @@
 import { Scale } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
+import { ExpenseReceipt } from '../components/ExpenseReceipt.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { moneyOutDescriber } from '../domain/cashflow.ts'
@@ -101,6 +102,15 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
   )
   const showIn = flow !== 'OUT'
   const showOut = flow !== 'IN'
+  const receiptsByEntry = useMemo(() => {
+    const result = new Map<string, typeof store.expenses>()
+    for (const expense of store.expenses) {
+      if (!expense.receiptDocumentId && !expense.receiptUrl) continue
+      const key = `${expense.businessDate}|${expense.amountSen}|${expense.description}`
+      result.set(key, [...(result.get(key) ?? []), expense])
+    }
+    return result
+  }, [store.expenses])
 
   const totals = useMemo(() => {
     const periodRows = inRange(
@@ -255,7 +265,9 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
                   <td className="whitespace-nowrap py-2 font-semibold">
                     {formatDate(row.businessDate)}
                   </td>
-                  <td className="py-2 font-semibold text-ink">{row.description}</td>
+                  <td className="py-2 font-semibold text-ink">{row.description}
+                    {row.direction === 'MONEY_OUT' && (row.category === 'OPERATING_EXPENSE' || row.category === 'CAPITAL_ASSET') ? <div className="flex flex-wrap gap-2">{(receiptsByEntry.get(`${row.businessDate}|${row.amountSen}|${row.description}`) ?? []).map((expense) => <ExpenseReceipt key={expense.id} expense={expense} />)}</div> : null}
+                  </td>
                   {out ? (
                     <>
                       <td className="py-2 pr-2 text-xs font-bold text-ink">{out.source}</td>

@@ -211,6 +211,8 @@ export type Expense = {
   drinksAmountSen: number
   description: string
   receiptUrl: string | null
+  /** A private receipt photo fetched on demand through the authenticated API. */
+  receiptDocumentId?: string | null
   /** Receipt details — absent on expenses logged before they existed. */
   receiptNo?: string | null
   vendor?: string | null
