@@ -3,6 +3,8 @@
 React + Vite dashboard for the owners of the Vista counter. English throughout, integer sen
 throughout, light mode only — the same choices as the POS.
 
+Part of the Vista system: [vista-pos](https://github.com/hariz2001-del/vista-pos) (cashier) · **vista-rms** (owner dashboard) · [vista-api](https://github.com/hariz2001-del/vista-api) (backend).
+
 **Status: connected to `api-vista`.** Sign in with the business account — the same one the
 counter uses (`demo@vistahub.my` / `vista` in the demo seed) — and the dashboard reads the real
 books from `GET /rms/snapshot`, re-reading every five seconds, so a sale rung at the counter shows
