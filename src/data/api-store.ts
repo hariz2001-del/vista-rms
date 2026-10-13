@@ -23,12 +23,11 @@ import type { BalanceAdjustment, MenuEdit, NewExpense, VistaStore } from './stor
  * The real books, read from api-vista.
  *
  * Returns exactly the shape of the demo store, so no screen knows which one it
- * is looking at. The whole snapshot is polled every few seconds — that is how a
- * sale rung at the counter appears on the owner's screen — and re-read straight
- * after every action, so a change the owner makes is visible at once.
+ * is looking at. Visible tabs poll a tiny database-side revision, not history.
+ * Full books are fetched only on load, a revision change, or a local action.
  */
 
-const POLL_MS = 5_000
+const POLL_MS = 30_000
 const SETTINGS_DEBOUNCE_MS = 600
 
 /**
@@ -165,25 +164,53 @@ export function useApiStore(enabled: boolean): VistaStore {
   /** What the settings sliders show while a save is on its way. */
   const [settingsDraft, setSettingsDraft] = useState<AccountSettings | null>(null)
   const settingsTimer = useRef<number | null>(null)
+  const loaded = useRef(false)
+  const revision = useRef<string | null>(null)
+  const inFlight = useRef<Promise<void> | null>(null)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (force = true): Promise<void> => {
+    if (inFlight.current) {
+      await inFlight.current
+      // A write can finish during a poll. Do not lose its post-write refresh.
+      if (force) return refresh(true)
+      return
+    }
+    const run = async () => {
     try {
-      setSnapshot(await apiRequest<Snapshot>('GET', '/rms/snapshot'))
+      const state = await apiRequest<Pick<Snapshot, 'businessDate' | 'terminal' | 'counterSessions'> & { revision: string }>('GET', '/rms/state')
+      if (force || !loaded.current || revision.current !== state.revision) {
+        setSnapshot(await apiRequest<Snapshot>('GET', '/rms/snapshot'))
+        loaded.current = true
+        revision.current = state.revision
+      } else {
+        setSnapshot(previous => previous ? { ...previous, businessDate: state.businessDate,
+          terminal: state.terminal, counterSessions: state.counterSessions } : previous)
+      }
       setError(null)
     } catch (caught) {
       // A rejected token is handled by the sign-in listener in App.
       if (caught instanceof SessionExpiredError) return
       setError(messageFor(caught, 'Loading the books'))
     }
+    }
+    inFlight.current = run()
+    try { await inFlight.current } finally { inFlight.current = null }
   }, [])
 
   useEffect(() => {
     if (!enabled) return
     // The request is async; the state update lands after it, not during the effect.
     // eslint-disable-next-line react/set-state-in-effect
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), POLL_MS)
-    return () => window.clearInterval(timer)
+    const poll = () => { if (document.visibilityState !== 'hidden') void refresh(false) }
+    poll()
+    const timer = window.setInterval(poll, POLL_MS)
+    document.addEventListener('visibilitychange', poll)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', poll)
+      loaded.current = false
+      revision.current = null
+    }
   }, [enabled, refresh])
 
   /** Run one owner action, then re-read the books so the result shows at once. */
