@@ -2,14 +2,16 @@ import {
   BookOpenText,
   Boxes,
   LayoutDashboard,
+  MoreHorizontal,
   Receipt,
   ReceiptText,
   Contact,
   Settings as SettingsIcon,
   UtensilsCrossed,
   Users,
+  X,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { nextResetLabel } from '../data/demo-session.ts'
 
 export type ScreenKey =
@@ -50,6 +52,9 @@ export const NAV: Array<{
   { key: 'settings', label: 'Settings', mobileLabel: 'Setup', icon: SettingsIcon },
 ]
 
+/** On a phone, four sections get a tab; the rest sit under More — nine tabs were too small to tap. */
+const MOBILE_TABS = new Set<ScreenKey>(['overview', 'receipts', 'expenses', 'team'])
+
 type Props = {
   current: ScreenKey
   onNavigate: (key: ScreenKey) => void
@@ -80,6 +85,15 @@ export function AppShell({
   children,
 }: Props) {
   const nav = showSettlement ? NAV : NAV.filter((item) => item.key !== 'settlement')
+  const tabs = nav.filter((item) => MOBILE_TABS.has(item.key))
+  const more = nav.filter((item) => !MOBILE_TABS.has(item.key))
+  const inMore = more.find((item) => item.key === current)
+  const [moreOpen, setMoreOpen] = useState(false)
+  useEffect(() => setMoreOpen(false), [current])
+  const go = (key: ScreenKey) => {
+    setMoreOpen(false)
+    onNavigate(key)
+  }
 
   return (
     <div className="paper-canvas min-h-dvh bg-canvas lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
@@ -171,36 +185,89 @@ export function AppShell({
 
         {banner}
 
-        <main className="flex-1 p-4 pb-24 sm:p-7 lg:px-10 lg:py-8 xl:px-12">{children}</main>
+        <main className="flex-1 p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-7 sm:pb-28 lg:px-10 lg:py-8 xl:px-12">{children}</main>
 
         {/* Mobile tab bar — the owner reads this on a phone as often as a laptop. */}
+        {moreOpen ? (
+          <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="More sections">
+            <button type="button" aria-label="Close" onClick={() => setMoreOpen(false)} className="absolute inset-0 bg-ink/40" />
+            <div className="absolute inset-x-0 bottom-0 border-t border-line bg-surface pb-[calc(4.5rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(24,33,29,0.12)]">
+              <div className="flex items-center justify-between px-5 pb-1 pt-4">
+                <p className="text-sm font-black uppercase tracking-[0.08em] text-muted">More</p>
+                <button type="button" aria-label="Close" onClick={() => setMoreOpen(false)} className="grid size-11 place-items-center">
+                  <X aria-hidden="true" className="size-5" />
+                </button>
+              </div>
+              <ul>
+                {more.map((item) => {
+                  const Icon = item.icon
+                  const isActive = current === item.key
+                  return (
+                    <li key={item.key}>
+                      <button
+                        type="button"
+                        onClick={() => go(item.key)}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={`flex min-h-14 w-full items-center gap-4 border-l-4 px-5 text-base font-bold ${
+                          isActive ? 'border-food bg-canvas text-rail' : 'border-transparent text-ink'
+                        }`}
+                      >
+                        <Icon aria-hidden="true" strokeWidth={isActive ? 2.2 : 1.8} className="size-6 shrink-0" />
+                        {item.label}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          </div>
+        ) : null}
         <nav
           aria-label="Primary"
-          style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}
-          className={`fixed inset-x-0 bottom-0 z-30 grid border-t border-line bg-surface/95 shadow-[0_-4px_18px_rgba(24,33,29,0.06)] backdrop-blur-sm lg:hidden`}>
-          {nav.map((item) => {
+          style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}
+          className="fixed inset-x-0 bottom-0 z-[45] grid border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_18px_rgba(24,33,29,0.06)] backdrop-blur-sm lg:hidden"
+        >
+          {tabs.map((item) => {
             const Icon = item.icon
-            const isActive = current === item.key
+            const isActive = current === item.key && !moreOpen
             return (
               <button
                 key={item.key}
                 type="button"
                 aria-label={item.label}
-                onClick={() => onNavigate(item.key)}
+                onClick={() => go(item.key)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`relative flex min-h-16 flex-col items-center justify-center gap-1 border-t-2 text-[0.58rem] font-bold ${
-                  isActive ? 'border-food text-rail' : 'border-transparent text-slate-400'
+                className={`relative flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 border-t-2 ${
+                  isActive ? 'border-food text-rail' : 'border-transparent text-slate-500'
                 }`}
               >
-                <Icon aria-hidden="true" strokeWidth={isActive ? 2.2 : 1.7} className="size-[1.15rem]" />
+                <Icon aria-hidden="true" strokeWidth={isActive ? 2.2 : 1.8} className="size-6" />
                 {/* Size on the span: the global `button { font: inherit }` beats utilities on the button. */}
-                <span className="text-[0.62rem] leading-none">{item.mobileLabel}</span>
+                <span className="text-xs font-bold leading-none">{item.mobileLabel}</span>
                 {item.key === 'overview' && attentionCount > 0 ? (
-                  <span className="absolute right-1/4 top-2 size-1.5 rounded-full bg-food" />
+                  <span className="absolute right-[30%] top-2.5 size-2 rounded-full bg-food" />
                 ) : null}
               </button>
             )
           })}
+          {(() => {
+            const isActive = Boolean(inMore) || moreOpen
+            const Icon = inMore && !moreOpen ? inMore.icon : MoreHorizontal
+            return (
+              <button
+                type="button"
+                aria-label="More sections"
+                aria-expanded={moreOpen}
+                onClick={() => setMoreOpen((open) => !open)}
+                className={`relative flex min-h-[4.25rem] flex-col items-center justify-center gap-1.5 border-t-2 ${
+                  isActive ? 'border-food text-rail' : 'border-transparent text-slate-500'
+                }`}
+              >
+                <Icon aria-hidden="true" strokeWidth={isActive ? 2.2 : 1.8} className="size-6" />
+                <span className="text-xs font-bold leading-none">{inMore && !moreOpen ? inMore.mobileLabel : 'More'}</span>
+              </button>
+            )
+          })()}
         </nav>
       </div>
     </div>

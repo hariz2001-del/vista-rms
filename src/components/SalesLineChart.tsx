@@ -28,6 +28,8 @@ const PAD = { top: 14, bottom: 30, side: 14 }
 const Y_AXIS_WIDTH = 58
 /** Below this spacing a range of days scrolls instead of squeezing. */
 const MIN_DAY_SPACING = 26
+/** Hours and half-hours too: on a phone a day of points scrolls instead of squashing. */
+const MIN_TIME_SPACING = 30
 const SURFACE = '#fffdf8'
 
 const MODES: Array<{ key: SeriesMode; label: string }> = [
@@ -137,16 +139,24 @@ export function SalesLineChart({
   const count = series.points.length
   const plotWidth = Math.max(
     viewport,
-    series.kind === 'DAY' ? count * MIN_DAY_SPACING + PAD.side * 2 : 0,
+    count * (series.kind === 'DAY' ? MIN_DAY_SPACING : MIN_TIME_SPACING) + PAD.side * 2,
   )
   const innerWidth = Math.max(1, plotWidth - PAD.side * 2)
   const plotHeight = HEIGHT - PAD.top - PAD.bottom
 
-  // Open a long range at its latest day.
+  // Open a long range at its latest day; a single day centred on its busiest hour.
   useEffect(() => {
-    const element = scrollRef.current
-    if (element) element.scrollLeft = element.scrollWidth
-  }, [series, plotWidth])
+    const element = scrollElement
+    if (!element) return
+    if (series.kind === 'DAY') {
+      element.scrollLeft = element.scrollWidth
+      return
+    }
+    const hourly = series.points.map((point) => Object.values(point.values).reduce((sum, value) => sum + value, 0))
+    const busiest = hourly.indexOf(Math.max(...hourly))
+    element.scrollLeft = busiest < 0 || hourly[busiest]! <= 0 ? 0 : Math.max(0, xAt(busiest) - element.clientWidth / 2)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- xAt follows series and plotWidth
+  }, [series, plotWidth, scrollElement])
 
   useEffect(() => setActive(null), [series])
 

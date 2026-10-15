@@ -215,6 +215,43 @@ main h1 {
   }
 
   .roster-preview {
-    zoom: 0.66;
+    /* Beats the on-screen fit-to-width, which is set on the element itself. */
+    zoom: 0.66 !important;
+  }
+}
+
+/*
+ * Phones and tablets: thumbs, not a mouse. Every control is at least 44px and
+ * the small print is readable. Outside Tailwind's layers on purpose, so these
+ * win over the compact desktop sizes; a mouse keeps the compact layout.
+ */
+@media (max-width: 1023px) and (pointer: coarse) {
+  /* :not() lifts these above the shared .vista-button / .vista-control sizes. */
+  main button:not([data-compact]),
+  main select:not([data-compact]),
+  main input:not([type='checkbox']):not([type='radio']):not([type='range']) {
+    min-height: 44px;
+  }
+  main button:not([data-compact]) {
+    min-width: 44px;
+  }
+  main input[type='checkbox'],
+  main input[type='radio'] {
+    width: 22px;
+    height: 22px;
+  }
+  main input[type='range'] {
+    min-height: 32px;
+  }
+  .text-\[0\.55rem\],
+  .text-\[0\.58rem\],
+  .text-\[0\.62rem\],
+  .text-\[0\.65rem\],
+  .text-\[0\.66rem\],
+  .text-\[0\.7rem\],
+  .text-\[11px\],
+  .page-kicker,
+  .vista-field-label {
+    font-size: 0.75rem;
   }
 }

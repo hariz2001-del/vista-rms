@@ -1,6 +1,6 @@
 import { toPng } from 'html-to-image'
 import { Download, Printer, X } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { dateTimeText, rosterApi, timeText, type RosterExport } from '../../data/roster-api.ts'
 import { errorText, useLoad } from '../../data/team-api.ts'
 
@@ -48,21 +48,55 @@ function RosterCard({ roster }: { roster: RosterExport }) {
   )
 }
 
+const CARD_WIDTH = 1080
+
 export function RosterShare({ weekId, onClose }: { weekId: string; onClose: () => void }) {
   const { data, error } = useLoad(() => rosterApi.exportWeek(weekId))
+  // The image is drawn from a full-size copy kept off screen: drawing the scaled
+  // preview cut the picture off on a phone.
   const card = useRef<HTMLDivElement>(null)
+  const preview = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(0.62)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
-  async function downloadImage() {
+  // The preview fits whatever width it has, phone or laptop.
+  useEffect(() => {
+    const element = preview.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0
+      if (width > 0) setScale(Math.min(1, width / CARD_WIDTH))
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [data])
+
+  async function shareImage() {
     if (!card.current || !data) return
     setBusy(true)
     setProblem(null)
     try {
-      const url = await toPng(card.current, { pixelRatio: 1, backgroundColor: '#ffffff' })
+      const url = await toPng(card.current, {
+        pixelRatio: 1,
+        backgroundColor: '#ffffff',
+        width: CARD_WIDTH,
+        height: card.current.scrollHeight,
+      })
+      const name = `roster-${data.weekStart}.png`
+      const file = new File([await (await fetch(url)).blob()], name, { type: 'image/png' })
+      // On a phone, straight to the share sheet (WhatsApp); elsewhere, a download.
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: `Roster · ${data.label}` })
+          return
+        } catch (shared) {
+          if (shared instanceof DOMException && shared.name === 'AbortError') return
+        }
+      }
       const link = document.createElement('a')
       link.href = url
-      link.download = `roster-${data.weekStart}.png`
+      link.download = name
       link.click()
     } catch (caught) {
       setProblem(errorText(caught, 'The image could not be made. Try printing instead.'))
@@ -79,9 +113,9 @@ export function RosterShare({ weekId, onClose }: { weekId: string; onClose: () =
             Export roster
           </h2>
           <span className="text-xs text-muted">Days, times and names only.</span>
-          <div className="ml-auto flex gap-2">
-            <button type="button" disabled={!data || busy} onClick={downloadImage} className="vista-button-primary flex min-h-11 items-center gap-2 disabled:opacity-50">
-              <Download aria-hidden="true" className="size-4" /> Image for WhatsApp
+          <div className="ml-auto flex flex-wrap justify-end gap-2">
+            <button type="button" disabled={!data || busy} onClick={shareImage} className="vista-button-primary flex min-h-11 items-center gap-2 disabled:opacity-50">
+              <Download aria-hidden="true" className="size-4" /> {busy ? 'Making image…' : 'Image for WhatsApp'}
             </button>
             <button type="button" disabled={!data} onClick={() => window.print()} className="vista-button-secondary flex min-h-11 items-center gap-2 disabled:opacity-50">
               <Printer aria-hidden="true" className="size-4" /> Print / PDF
@@ -94,14 +128,20 @@ export function RosterShare({ weekId, onClose }: { weekId: string; onClose: () =
         {problem ? <p className="text-sm font-bold text-serious print:hidden">{problem}</p> : null}
         {error && !data ? <p className="text-sm font-bold text-serious">{error}</p> : null}
         {data ? (
-          <div className="print-area overflow-x-auto border border-line print:overflow-visible print:border-0">
-            {/* Zoom, not a transform: a transform leaves the full-size box behind. */}
-            <div className="roster-preview">
+          <>
+            <div ref={preview} className="print-area overflow-hidden border border-line print:overflow-visible print:border-0">
+              {/* Zoom, not a transform: a transform leaves the full-size box behind. */}
+              <div className="roster-preview" style={{ zoom: scale }}>
+                <RosterCard roster={data} />
+              </div>
+            </div>
+            {/* Full size, off screen: what the image is drawn from. */}
+            <div aria-hidden="true" className="pointer-events-none fixed left-[-20000px] top-0 print:hidden">
               <div ref={card}>
                 <RosterCard roster={data} />
               </div>
             </div>
-          </div>
+          </>
         ) : (
           <p className="text-sm text-muted">Loading…</p>
         )}
