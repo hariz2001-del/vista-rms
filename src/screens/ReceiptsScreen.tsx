@@ -208,6 +208,7 @@ function ReceiptDetail({
           >
             {order.queueNumber}
           </p>
+          {order.pagerNumber ? <p className="mt-2 text-sm font-black">Pager {order.pagerNumber}</p> : null}
           <p className="mt-2 text-xs text-muted">
             {formatDate(order.businessDate)} · {timeOf(order.completedAt)} · QR · manually confirmed
           </p>

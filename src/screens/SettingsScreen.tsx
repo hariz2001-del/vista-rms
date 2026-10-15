@@ -323,6 +323,27 @@ export function SettingsScreen({ store }: { store: VistaStore }) {
         </dl>
       </Panel>
 
+      <Panel>
+        <SectionHeading
+          title="Order pagers"
+          hint="Ask for a pager number after Confirm Order and before Mark Paid. The number is saved on the receipt."
+        />
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-black">{store.settings.pagerEnabled ? 'On' : 'Off'}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-label="Order pagers"
+            aria-checked={store.settings.pagerEnabled ?? false}
+            onClick={() => store.setSettings({ ...store.settings, pagerEnabled: !store.settings.pagerEnabled })}
+            className="vista-button-secondary min-h-11 px-4"
+          >
+            {store.settings.pagerEnabled ? 'Turn off' : 'Turn on'}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-muted">Past receipts keep their pager numbers when switched off.</p>
+      </Panel>
+
       <SettlementSwitch store={store} />
 
       {showSplit ? <SplitPanels store={store} food={food} drinks={drinks} /> : null}

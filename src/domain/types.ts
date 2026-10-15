@@ -103,6 +103,7 @@ export type Order = {
   shiftId: string
   businessDate: string
   queueNumber: string
+  pagerNumber?: string | null
   offlineLabel: string | null
   completedAt: string
   grossSen: number
@@ -318,6 +319,7 @@ export type AccountSettings = {
    * them. Off for a new business, which then never sees partners or splits.
    */
   settlementEnabled: boolean
+  pagerEnabled?: boolean
   /**
    * When one trading day ends and the next begins: an hour of the morning,
    * 0–12, Malaysia time. With 5, a 1am sale counts for the night before.
