@@ -1,6 +1,7 @@
-import { ChevronLeft, ChevronRight, CloudOff, RotateCcw, Undo2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CloudOff, RotateCcw, Undo2, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Badge, EmptyState, Money, Panel, SectionHeading } from '../components/primitives.tsx'
+import { SaleFix } from '../components/SaleFix.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { formatRinggit, formatSignedRinggit } from '../domain/money.ts'
 import { formatDate } from '../domain/selectors.ts'
@@ -29,12 +30,14 @@ function itemCount(order: Order): number {
  * Every receipt the counter rang up, a business day at a time — the same
  * tickets the cashier sees on the till, from every tablet.
  *
- * Read-only on purpose. A paid sale is corrected at the counter, in front of the
- * customer; here the owner only sees what was sold and what was changed after.
+ * A paid sale is normally corrected at the counter, in front of the customer.
+ * When the counter missed one (a refund given but never keyed in), the owner can
+ * fix it here; the fix is recorded beside the sale, never by editing it.
  */
 export function ReceiptsScreen({ store }: { store: VistaStore }) {
   const [date, setDate] = useState(store.today)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [notice, setNotice] = useState('')
 
   const orders = useMemo(
     () =>
@@ -71,7 +74,7 @@ export function ReceiptsScreen({ store }: { store: VistaStore }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <SectionHeading
           title="Receipts"
-          hint="Every sale rung up at the counter, from every tablet. Cancels and edits are made at the till; here they show beside the sale they changed."
+          hint="Every sale rung up at the counter, from every tablet. Cancels and refunds show beside the sale they changed. Missed one at the till? Open the sale and fix it here."
         />
         <div className="flex items-center gap-1 border border-line bg-surface">
           <button
@@ -113,6 +116,13 @@ export function ReceiptsScreen({ store }: { store: VistaStore }) {
         </div>
       </div>
 
+      {notice ? (
+        <p role="status" className="flex items-center justify-between gap-3 border border-line bg-surface p-3 text-sm font-bold">
+          {notice}
+          <button type="button" onClick={() => setNotice('')} className="min-h-9 text-xs underline">Dismiss</button>
+        </p>
+      ) : null}
+
       <p className="font-mono text-xs font-bold uppercase tracking-[0.08em] text-muted">
         {formatDate(date)}
         {isToday ? ' · today' : ''} · {orders.length} sale{orders.length === 1 ? '' : 's'} ·{' '}
@@ -148,7 +158,7 @@ export function ReceiptsScreen({ store }: { store: VistaStore }) {
                         {isCancelled ? (
                           <Badge tone="critical">Cancelled</Badge>
                         ) : corrections.length > 0 ? (
-                          <Badge>Edited</Badge>
+                          <Badge>{corrections.some((correction) => correction.deltaSen < 0) ? 'Refunded' : 'Edited'}</Badge>
                         ) : null}
                       </span>
                       <span className="block text-xs text-muted">
@@ -169,6 +179,12 @@ export function ReceiptsScreen({ store }: { store: VistaStore }) {
 
           {selected ? (
             <ReceiptDetail
+              key={selected.id}
+              canFix={store.canFixSales}
+              onFixed={(message) => {
+                setNotice(message)
+                void store.reloadBooks()
+              }}
               order={selected}
               corrections={correctionsByOrder.get(selected.id) ?? []}
               brands={store.brands}
@@ -186,13 +202,18 @@ function ReceiptDetail({
   corrections,
   brands,
   categories,
+  canFix,
+  onFixed,
 }: {
+  canFix: boolean
+  onFixed: (message: string) => void
   order: Order
   corrections: SaleCorrection[]
   brands: Brand[]
   categories: Category[]
 }) {
   const isCancelled = corrections.some((correction) => correction.kind === 'CANCEL')
+  const [fixing, setFixing] = useState(false)
   const discountSen = order.lineDiscountSen + order.orderDiscountSen
   const netSen = order.totalAmountSen + corrections.reduce((sum, c) => sum + c.deltaSen, 0)
 
@@ -315,7 +336,7 @@ function ReceiptDetail({
               ) : (
                 <RotateCcw aria-hidden="true" className="size-3.5 shrink-0" />
               )}
-              <span className="text-ink">{correction.kind === 'CANCEL' ? 'Cancelled' : 'Edited'}</span>
+              <span className="text-ink">{correction.kind === 'CANCEL' ? 'Cancelled' : correction.deltaSen < 0 ? 'Refunded' : 'Edited'}</span>
               <span>·</span>
               <span className="font-semibold">{correction.reason}</span>
               <span>
@@ -326,6 +347,28 @@ function ReceiptDetail({
             </p>
           ))}
         </div>
+      ) : null}
+
+      {canFix && !isCancelled ? (
+        fixing ? (
+          <SaleFix
+            orderId={order.id}
+            onClose={() => setFixing(false)}
+            onDone={(message) => {
+              setFixing(false)
+              onFixed(message)
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setFixing(true)}
+            className="mt-4 inline-flex min-h-11 items-center gap-2 border border-line px-4 text-sm font-bold hover:bg-canvas"
+          >
+            <Wrench aria-hidden="true" className="size-4" />
+            Fix this sale
+          </button>
+        )
       ) : null}
     </Panel>
   )

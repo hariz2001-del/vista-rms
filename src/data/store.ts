@@ -131,6 +131,7 @@ export type MenuEdit =
 const noop = () => {}
 
 /** The demo catalogue is fixed; building a menu needs the real server. */
+const noopAsync = async (): Promise<void> => {}
 const editMenuUnavailable = async (edit: MenuEdit): Promise<boolean> => {
   void edit
   return false
@@ -550,6 +551,10 @@ export function useDemoStore(_enabled = true) {
       /** Resolves true once the change is saved; false if it was refused. */
       editMenu: editMenuUnavailable,
       canEditMenu: false,
+      /** Owner fixes to paid sales (refund items, cancel) — live books only. */
+      canFixSales: false,
+      /** Re-read the books after a change made outside the store. */
+      reloadBooks: noopAsync,
       promotions: [] as Promotion[],
       error: null as string | null,
       dismissError: noop,
