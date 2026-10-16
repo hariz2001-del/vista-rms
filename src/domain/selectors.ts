@@ -194,11 +194,18 @@ export type AttentionItem = {
  * Money owed to partners is not here: it sits on the Expenses screen, one
  * total per partner, where it is paid back.
  */
-export function attentionItems(corrections: readonly SaleCorrection[] = []): AttentionItem[] {
-  const correctionActivity = corrections.map((correction) => ({
+export function attentionItems(
+  corrections: readonly SaleCorrection[] = [],
+  /** Only the notes for these business days (the day or period on screen). */
+  range?: { startDate: string; endDate: string },
+): AttentionItem[] {
+  const onScreen = range
+    ? corrections.filter((c) => c.businessDate >= range.startDate && c.businessDate <= range.endDate)
+    : corrections
+  const correctionActivity = onScreen.map((correction) => ({
     id: `correction-${correction.id}`,
     kind: 'CORRECTION_ACTIVITY' as const,
-    title: `${correction.originalQueueNumber} ${correction.kind === 'CANCEL' ? 'cancelled' : 'edited'}`,
+    title: `${correction.originalQueueNumber} ${correction.kind === 'CANCEL' ? 'cancelled' : correction.deltaSen < 0 ? 'refunded' : 'edited'}`,
     detail: correction.reason,
     businessDate: correction.businessDate,
     amountSen: Math.abs(correction.deltaSen),

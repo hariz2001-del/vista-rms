@@ -1,10 +1,10 @@
-import { ArrowRight, ReceiptText } from 'lucide-react'
+import { ArrowRight, Bell, ChevronDown, ReceiptText } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { PanelErrorBoundary } from '../components/PanelErrorBoundary.tsx'
 import { SalesLineChart } from '../components/SalesLineChart.tsx'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { SalesPerformanceBreakdown } from '../components/SalesPerformanceBreakdown.tsx'
-import { Badge, Money, Panel, SectionHeading, StatTile } from '../components/primitives.tsx'
+import { Money, Panel, SectionHeading, StatTile } from '../components/primitives.tsx'
 import type { ScreenKey } from '../components/AppShell.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { formatRinggit } from '../domain/money.ts'
@@ -34,10 +34,12 @@ export function OverviewScreen({
     () => summariseRange(range, store.orders, store.expenses, store.corrections),
     [range, store.orders, store.expenses, store.corrections],
   )
+  // Notes for the day (or period) on screen only — not every correction ever made.
   const attention = useMemo(
-    () => attentionItems(store.corrections),
-    [store.corrections],
+    () => attentionItems(store.corrections, range),
+    [store.corrections, range],
   )
+  const [notesOpen, setNotesOpen] = useState(false)
 
   const balanceSen = liquidBalance(store.ledger)
 
@@ -57,43 +59,52 @@ export function OverviewScreen({
       </div>
 
       {attention.length > 0 ? (
-        <Panel className="border-t-2 border-t-warning lg:p-5">
-          <SectionHeading
-            title="Owner's desk"
-            hint={`${attention.length} cashier correction${attention.length === 1 ? '' : 's'}, shown for oversight, not approval.`}
-          />
-          <ul className="divide-y divide-slate-100">
-            {attention.map((item) => (
-              <li
-                key={item.id}
-                className="grid gap-2 py-3.5 sm:grid-cols-[1.25rem_minmax(0,1fr)_auto_auto_auto] sm:items-center sm:gap-3"
+        <section aria-label="Notifications" className="border border-line border-l-4 border-l-warning bg-surface">
+          <button
+            type="button"
+            onClick={() => setNotesOpen((open) => !open)}
+            aria-expanded={notesOpen}
+            className="flex min-h-12 w-full items-center gap-3 px-4 text-left"
+          >
+            <Bell aria-hidden="true" className="size-4 shrink-0 text-warning" />
+            <span className="min-w-0 flex-1 text-sm font-bold text-ink">
+              {attention.length} notification{attention.length === 1 ? '' : 's'}
+              {range.startDate === range.endDate && range.startDate === store.today ? ' today' : ''}
+              <span className="font-semibold text-muted"> · cashier corrections</span>
+            </span>
+            <ChevronDown aria-hidden="true" className={`size-4 shrink-0 text-muted transition-transform ${notesOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {notesOpen ? (
+            <div className="border-t border-line px-4 pb-3">
+              <ul className="divide-y divide-slate-100">
+                {attention.map((item) => (
+                  <li key={item.id} className="flex items-center gap-3 py-2.5">
+                    <ReceiptText aria-hidden="true" className="size-4 shrink-0 text-warning" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-ink">{item.title}</p>
+                      <p className="truncate text-xs text-muted">
+                        {range.startDate === range.endDate ? '' : `${formatDate(item.businessDate)} · `}
+                        {item.detail}
+                      </p>
+                    </div>
+                    <span className="shrink-0 font-mono text-xs font-bold tabular">
+                      {item.deltaSen === null || item.deltaSen === 0
+                        ? formatRinggit(item.amountSen)
+                        : `${item.deltaSen > 0 ? '+' : '−'}${formatRinggit(item.amountSen)}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => onNavigate('receipts')}
+                className="mt-1 inline-flex min-h-10 items-center gap-1.5 text-xs font-bold text-ink underline"
               >
-                <ReceiptText aria-hidden="true" className="size-4 shrink-0 text-warning" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-black text-ink">{item.title}</p>
-                  <p className="text-xs font-semibold text-muted">
-                    {formatDate(item.businessDate)} · {item.detail}
-                  </p>
-                </div>
-                <Badge tone="warning">Cashier correction</Badge>
-                <span className="font-mono text-sm font-bold tabular">
-                  {item.deltaSen === null
-                    ? formatRinggit(item.amountSen)
-                    : item.deltaSen === 0
-                      ? 'No net change'
-                      : `${item.deltaSen > 0 ? 'Collected' : 'Refunded'} ${formatRinggit(item.amountSen)}`}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onNavigate('cashflow')}
-                  className="min-h-9 border border-line px-3 text-xs font-bold text-muted hover:bg-canvas"
-                >
-                  Review ledger
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+                See them in Receipts <ArrowRight aria-hidden="true" className="size-3.5" />
+              </button>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       <section aria-label="Period financial summary" className="grid border border-line bg-surface sm:grid-cols-2">

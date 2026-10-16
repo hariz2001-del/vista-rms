@@ -73,6 +73,15 @@ describe('correction reporting', () => {
     ])
   })
 
+  it('shows only the notes for the day on screen, and calls a money-back edit a refund', () => {
+    const day = CORRECTION.businessDate
+    const refund = { ...CORRECTION, id: 'c-2', deltaSen: -300 }
+    const older = { ...CORRECTION, id: 'c-3', businessDate: '2020-01-01' }
+    const notes = attentionItems([CORRECTION, refund, older], { startDate: day, endDate: day })
+    expect(notes).toHaveLength(2)
+    expect(notes.find((note) => note.id === 'correction-c-2')?.title).toBe('#014 refunded')
+  })
+
   it('includes correction deltas in the live counter takings', () => {
     const refund = { ...CORRECTION, deltaSen: -200, brandDeltas: [{ brandId: 'food', deltaSen: -200 }] }
     const shifts: Shift[] = [

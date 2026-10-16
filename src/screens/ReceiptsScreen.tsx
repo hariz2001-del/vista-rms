@@ -38,6 +38,7 @@ export function ReceiptsScreen({ store }: { store: VistaStore }) {
   const [date, setDate] = useState(store.today)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
+  const [onlyCorrected, setOnlyCorrected] = useState(false)
 
   const orders = useMemo(
     () =>
@@ -61,12 +62,15 @@ export function ReceiptsScreen({ store }: { store: VistaStore }) {
     (correctionsByOrder.get(order.id) ?? []).reduce((sum, correction) => sum + correction.deltaSen, 0)
   const dayNetSen = orders.reduce((sum, order) => sum + netOf(order), 0)
 
-  const selected = orders.find((order) => order.id === selectedId) ?? orders[0] ?? null
+  const correctedCount = orders.filter((order) => correctionsByOrder.has(order.id)).length
+  const shown = onlyCorrected ? orders.filter((order) => correctionsByOrder.has(order.id)) : orders
+  const selected = shown.find((order) => order.id === selectedId) ?? shown[0] ?? null
   const isToday = date === store.today
 
   const go = (next: string) => {
     setDate(next)
     setSelectedId(null)
+    setOnlyCorrected(false)
   }
 
   return (
@@ -129,12 +133,36 @@ export function ReceiptsScreen({ store }: { store: VistaStore }) {
         {formatRinggit(dayNetSen)} after corrections
       </p>
 
+      {correctedCount > 0 ? (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Show">
+          <button
+            type="button"
+            aria-pressed={!onlyCorrected}
+            onClick={() => setOnlyCorrected(false)}
+            className={`min-h-10 border px-3 text-xs font-bold ${!onlyCorrected ? 'border-ink bg-ink text-canvas' : 'border-line bg-surface'}`}
+          >
+            All sales ({orders.length})
+          </button>
+          <button
+            type="button"
+            aria-pressed={onlyCorrected}
+            onClick={() => {
+              setOnlyCorrected(true)
+              setSelectedId(null)
+            }}
+            className={`min-h-10 border px-3 text-xs font-bold ${onlyCorrected ? 'border-ink bg-ink text-canvas' : 'border-line bg-surface'}`}
+          >
+            Corrected ({correctedCount})
+          </button>
+        </div>
+      ) : null}
+
       {orders.length === 0 ? (
         <EmptyState title="No sales on this day" hint="Pick another day with the arrows or the date." />
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
           <ul aria-label={`Receipts on ${formatDate(date)}`} className="border border-line bg-surface">
-            {orders.map((order) => {
+            {shown.map((order) => {
               const corrections = correctionsByOrder.get(order.id) ?? []
               const isCancelled = corrections.some((correction) => correction.kind === 'CANCEL')
               const isSelected = selected?.id === order.id

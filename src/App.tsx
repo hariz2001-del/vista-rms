@@ -91,8 +91,9 @@ export default function App() {
   }, [])
 
   const attentionCount = useMemo(
-    () => attentionItems(store.corrections).length,
-    [store.corrections],
+    // The dot on Home: today's notes only.
+    () => attentionItems(store.corrections, { startDate: store.today, endDate: store.today }).length,
+    [store.corrections, store.today],
   )
 
   async function handleSignIn(email: string, password: string): Promise<string | null> {
