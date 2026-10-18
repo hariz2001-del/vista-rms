@@ -121,3 +121,39 @@ export async function apiRequest<T>(
 
   return payload as T
 }
+
+/**
+ * A file Vista makes on the server (a PDF, the roster picture). Made there so
+ * the RMS and Sarang AI hand out the same file.
+ */
+export async function apiFile(path: string): Promise<File> {
+  const token = readToken()
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  } catch {
+    throw new NetworkError()
+  }
+  if (!response.ok) {
+    const error = ((await response.json().catch(() => null)) ?? {}) as ErrorBody
+    if (error.error === 'auth:UNAUTHORIZED') {
+      writeToken(null)
+      for (const listener of expiryListeners) listener()
+      throw new SessionExpiredError()
+    }
+    throw new ApiError(error.error ?? 'server:UNEXPECTED', error.message ?? 'The file could not be made.', response.status)
+  }
+  const name = /filename="([^"]+)"/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? 'vista-file'
+  const blob = await response.blob()
+  return new File([blob], name, { type: blob.type })
+}
+
+/** Saves a file to the device's downloads. */
+export function saveFile(file: File): void {
+  const url = URL.createObjectURL(file)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.name
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}

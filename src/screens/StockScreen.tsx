@@ -77,7 +77,6 @@ export function StockScreen({ store }: { store: VistaStore }) {
             <StockListTab
               brands={store.brands}
               menuCategories={store.categories}
-              businessName={store.settings.outletName || store.settings.businessName}
             />
           ) : null}
           {posView ? <StockPosPreview brands={store.brands} onClose={() => setPosView(false)} /> : null}

@@ -4,7 +4,7 @@ import { BrandDot, EmptyState, Panel, SectionHeading } from '../../components/pr
 import { stockApi, type StockItem, type StockItemInput } from '../../data/stock-api.ts'
 import { errorText, useLoad } from '../../data/team-api.ts'
 import { groupStock, moveStock } from '../../domain/stock.ts'
-import { downloadStockChecklist } from '../../lib/stock-pdf.ts'
+import { apiFile, saveFile } from '../../lib/http.ts'
 import type { Brand, Category } from '../../domain/types.ts'
 
 const fieldClass =
@@ -67,11 +67,9 @@ function IconButton({
 export function StockListTab({
   brands,
   menuCategories,
-  businessName,
 }: {
   brands: Brand[]
   menuCategories: Category[]
-  businessName: string
 }) {
   const { data, error, reload } = useLoad(stockApi.listItems)
   const items = useMemo(() => data?.items ?? [], [data])
@@ -165,13 +163,7 @@ export function StockListTab({
   async function checklistPdf() {
     setProblem(null)
     try {
-      await downloadStockChecklist(
-        items
-          .filter((item) => item.isActive)
-          .map((item) => ({ ...item, brand: brandName(item.brandId) })),
-        { businessName, filled: null },
-        'closing-stock-checklist.pdf',
-      )
+      saveFile(await apiFile('/rms/stock/checklist/pdf'))
     } catch (caught) {
       setProblem(errorText(caught, 'The PDF could not be made. Try again.'))
     }

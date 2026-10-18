@@ -1,8 +1,8 @@
-import { toPng } from 'html-to-image'
 import { Download, Printer, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { dateTimeText, rosterApi, timeText, type RosterExport } from '../../data/roster-api.ts'
 import { errorText, useLoad } from '../../data/team-api.ts'
+import { apiFile, saveFile } from '../../lib/http.ts'
 
 /**
  * The roster as it is shared: days, times and names, and when it was last
@@ -52,9 +52,6 @@ const CARD_WIDTH = 1080
 
 export function RosterShare({ weekId, onClose }: { weekId: string; onClose: () => void }) {
   const { data, error } = useLoad(() => rosterApi.exportWeek(weekId))
-  // The image is drawn from a full-size copy kept off screen: drawing the scaled
-  // preview cut the picture off on a phone.
-  const card = useRef<HTMLDivElement>(null)
   const preview = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(0.62)
   const [busy, setBusy] = useState(false)
@@ -72,19 +69,13 @@ export function RosterShare({ weekId, onClose }: { weekId: string; onClose: () =
     return () => observer.disconnect()
   }, [data])
 
+  // The picture is made by Vista's server, so the RMS and Sarang AI share the same one.
   async function shareImage() {
-    if (!card.current || !data) return
+    if (!data) return
     setBusy(true)
     setProblem(null)
     try {
-      const url = await toPng(card.current, {
-        pixelRatio: 1,
-        backgroundColor: '#ffffff',
-        width: CARD_WIDTH,
-        height: card.current.scrollHeight,
-      })
-      const name = `roster-${data.weekStart}.png`
-      const file = new File([await (await fetch(url)).blob()], name, { type: 'image/png' })
+      const file = await apiFile(`/rms/team/weeks/${weekId}/export/png`)
       // On a phone, straight to the share sheet (WhatsApp); elsewhere, a download.
       if (navigator.canShare?.({ files: [file] })) {
         try {
@@ -94,10 +85,7 @@ export function RosterShare({ weekId, onClose }: { weekId: string; onClose: () =
           if (shared instanceof DOMException && shared.name === 'AbortError') return
         }
       }
-      const link = document.createElement('a')
-      link.href = url
-      link.download = name
-      link.click()
+      saveFile(file)
     } catch (caught) {
       setProblem(errorText(caught, 'The image could not be made. Try printing instead.'))
     } finally {
@@ -132,12 +120,6 @@ export function RosterShare({ weekId, onClose }: { weekId: string; onClose: () =
             <div ref={preview} className="print-area overflow-hidden border border-line print:overflow-visible print:border-0">
               {/* Zoom, not a transform: a transform leaves the full-size box behind. */}
               <div className="roster-preview" style={{ zoom: scale }}>
-                <RosterCard roster={data} />
-              </div>
-            </div>
-            {/* Full size, off screen: what the image is drawn from. */}
-            <div aria-hidden="true" className="pointer-events-none fixed left-[-20000px] top-0 print:hidden">
-              <div ref={card}>
                 <RosterCard roster={data} />
               </div>
             </div>

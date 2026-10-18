@@ -8,7 +8,7 @@ import { errorText } from '../../data/team-api.ts'
 import { StockLevelReading } from '../../components/StockLevelBar.tsx'
 import { formatCount, groupStock, stockNote } from '../../domain/stock.ts'
 import { formatDate, type DateRange } from '../../domain/selectors.ts'
-import { downloadStockChecklist } from '../../lib/stock-pdf.ts'
+import { apiFile, saveFile } from '../../lib/http.ts'
 
 const ALL = ''
 
@@ -33,14 +33,7 @@ function Report({ count }: { count: StockCount }) {
   async function pdf() {
     setProblem(null)
     try {
-      await downloadStockChecklist(
-        count.lines.map((line) => ({ ...line, brand: line.brandName })),
-        {
-          businessName: count.branchName,
-          filled: { date: formatDate(count.businessDate), countedBy: count.staffName, sentAt: clockText(count.submittedAt), remarks: count.remarks },
-        },
-        `closing-stock-${count.businessDate}.pdf`,
-      )
+      saveFile(await apiFile(`/rms/stock/counts/${count.id}/pdf`))
     } catch (caught) {
       setProblem(errorText(caught, 'The PDF could not be made. Try again.'))
     }
