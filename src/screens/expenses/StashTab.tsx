@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Image as ImageIcon, Pencil, Plus, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, Folder, FolderCheck, Image as ImageIcon, Inbox, Pencil, Plus, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CATEGORIES, PAYMENT_METHODS } from '../../components/ExpenseForm.tsx'
 import { Badge, EmptyState, Panel } from '../../components/primitives.tsx'
@@ -31,6 +31,7 @@ export type StashSummary = {
   ready: boolean
   recorded: boolean
   receivedAt: string
+  drivePath?: string | null
 }
 
 type StashLine = { index: number; name: string; quantityMilli: number; unitPriceSen: number; amountSen: number; decision: 'pending' | 'posted' | 'scrapped' }
@@ -477,32 +478,108 @@ function Sorter({ store, detail, onDone, onEdit }: { store: VistaStore; detail: 
   )
 }
 
+/** Monday–Sunday weeks inside the month, as Chopper files them in Drive: W1 runs from the 1st to the first Sunday. */
+function weekOf(date: string): { week: number; from: number; to: number } {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number]
+  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7
+  const week = Math.floor((d - 1 + lead) / 7) + 1
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  const from = Math.max(1, (week - 1) * 7 - lead + 1)
+  return { week, from, to: Math.min(days, from + (week === 1 ? 6 - lead : 6)) }
+}
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** A receipt as a file: its scan's preview, loaded when it scrolls into view. */
+function FileCard({ receipt, sorted, onOpen }: { receipt: StashSummary; sorted: boolean; onOpen: () => void }) {
+  const box = useRef<HTMLButtonElement>(null)
+  const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const element = box.current
+    if (!element) return
+    let made: string | null = null
+    let live = true
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return
+      observer.disconnect()
+      apiFile(`/rms/stash/${receipt.receiptKey}/thumb`)
+        .then((file) => { if (!live) return; made = URL.createObjectURL(file); setUrl(made) })
+        .catch(() => live && setFailed(true))
+    }, { rootMargin: '200px' })
+    observer.observe(element)
+    return () => { live = false; observer.disconnect(); if (made) URL.revokeObjectURL(made) }
+  }, [receipt.receiptKey])
+  const amount = (sorted ? receipt.bookedSen : receipt.pendingSen) || receipt.totalSen || 0
+  return (
+    <button ref={box} type="button" onClick={onOpen} className="group flex flex-col overflow-hidden border border-line bg-surface text-left transition-shadow hover:shadow-md focus-visible:outline-2">
+      <span className="relative block aspect-[3/4] w-full overflow-hidden bg-canvas">
+        {url ? <img src={url} alt="" className="size-full object-cover object-top" /> : (
+          <span className="grid size-full place-items-center text-muted">
+            {failed ? <ImageIcon aria-hidden="true" className="size-8" /> : <span className="text-xs">Loading…</span>}
+          </span>
+        )}
+        <span className="absolute left-1.5 top-1.5 flex flex-wrap gap-1">
+          {receipt.duplicate ? <Badge tone="warning">Duplicate?</Badge> : null}
+          {receipt.problem || (!sorted && !receipt.ready) ? <Badge tone="warning">Check</Badge> : null}
+          {!sorted && receipt.bookedSen ? <Badge tone="info">Part sorted</Badge> : null}
+          {sorted ? <Badge tone="good">Sorted</Badge> : null}
+        </span>
+      </span>
+      <span className="block px-2.5 py-2">
+        <span className="block truncate text-sm font-black text-ink">{receipt.vendor ?? 'Reading…'}</span>
+        <span className="mt-0.5 flex items-center justify-between gap-2 text-xs font-semibold text-muted">
+          <span>{receipt.date ? formatDate(receipt.date) : '—'}</span>
+          <span className="tabular font-bold text-ink">{formatRinggit(amount)}</span>
+        </span>
+        <span className="block truncate text-[0.68rem] text-muted">{receipt.receiptKey}</span>
+      </span>
+    </button>
+  )
+}
+
+function FolderTile({ name, hint, count, onOpen }: { name: string; hint?: string; count: number; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className="flex min-h-16 items-center gap-3 border border-line bg-surface px-3 py-2 text-left hover:bg-white">
+      <Folder aria-hidden="true" className="size-7 shrink-0 fill-amber-200 text-amber-600" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-black text-ink">{name}</span>
+        <span className="block text-xs font-semibold text-muted">{hint ? `${hint} · ` : ''}{count} receipt{count === 1 ? '' : 's'}</span>
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Chopper's receipts, browsed like the Drive they are filed in: the Stash (still
+ * to sort) as one folder, and Sorted by year, month and week. Opening one shows
+ * its scan beside its lines, to sort, correct or change.
+ */
 export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: number) => void }) {
-  const [list, setList] = useState<StashSummary[] | null>(null)
+  const [area, setArea] = useState<'stashed' | 'sorted'>('stashed')
+  const [path, setPath] = useState<string[]>([])
+  const [lists, setLists] = useState<{ stashed: StashSummary[] | null; sorted: StashSummary[] | null }>({ stashed: null, sorted: null })
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [detail, setDetail] = useState<StashDetail | null>(null)
   const [notice, setNotice] = useState('')
-  const [view, setView] = useState<'toSort' | 'sorted'>('toSort')
   const [editing, setEditing] = useState(false)
 
-  const loadList = useCallback(async () => {
+  const loadLists = useCallback(async () => {
     try {
-      const result = await stashApi.list(view === 'sorted')
-      setList(result.receipts)
-      onCount(result.count)
+      const [stashed, sorted] = await Promise.all([stashApi.list(false), stashApi.list(true)])
+      setLists({ stashed: stashed.receipts, sorted: sorted.receipts })
+      onCount(stashed.count)
       setError('')
-      setSelected((key) => (key && result.receipts.some((r) => r.receiptKey === key) ? key : (result.receipts[0]?.receiptKey ?? null)))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The stash could not be loaded.')
+      setError(reason instanceof Error ? reason.message : 'The receipts could not be loaded.')
     }
-  }, [onCount, view])
+  }, [onCount])
 
   useEffect(() => {
-    void loadList()
-    const timer = window.setInterval(() => void loadList(), 20_000)
+    void loadLists()
+    const timer = window.setInterval(() => void loadLists(), 30_000)
     return () => window.clearInterval(timer)
-  }, [loadList])
+  }, [loadLists])
 
   useEffect(() => {
     setEditing(false)
@@ -512,88 +589,120 @@ export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: n
     return () => { live = false }
   }, [selected])
 
-  const sorted = useMemo(() => list ?? [], [list])
-
   async function done(message: string) {
     setNotice(message)
     setEditing(false)
     await store.reloadBooks()
-    await loadList()
+    await loadLists()
     if (selected) setDetail(await stashApi.detail(selected).catch(() => null))
   }
 
-  const switcher = (
-    <div className="mb-3 flex gap-1">
-      {([['toSort', 'To sort'], ['sorted', 'Sorted']] as const).map(([key, label]) => (
-        <button key={key} type="button" onClick={() => { setView(key); setSelected(null); setList(null); setNotice('') }}
-          className={`min-h-10 border px-3 text-sm font-bold ${view === key ? 'border-ink bg-ink text-white' : 'border-line bg-surface text-ink hover:bg-white'}`}>
+  // Sorted, as folders: year › month › week, newest first.
+  const sorted = useMemo(() => (lists.sorted ?? []).filter((r) => r.date), [lists.sorted])
+  const level = useMemo(() => {
+    const [year, month, week] = path
+    const inYear = sorted.filter((r) => !year || r.date!.startsWith(year + '-'))
+    const inMonth = inYear.filter((r) => !month || r.date!.slice(5, 7) === month)
+    const inWeek = inMonth.filter((r) => !week || `W${weekOf(r.date!).week}` === week)
+    const groups = (items: StashSummary[], keyOf: (r: StashSummary) => string) => {
+      const map = new Map<string, StashSummary[]>()
+      for (const r of items) map.set(keyOf(r), [...(map.get(keyOf(r)) ?? []), r])
+      return [...map.entries()].toSorted((a, b) => b[0].localeCompare(a[0], undefined, { numeric: true }))
+    }
+    if (!year) return { folders: groups(sorted, (r) => r.date!.slice(0, 4)).map(([k, v]) => ({ key: k, name: k, items: v })) }
+    if (!month) return { folders: groups(inYear, (r) => r.date!.slice(5, 7)).map(([k, v]) => ({ key: k, name: `${k} · ${MONTHS[Number(k) - 1]}`, items: v })) }
+    if (!week) {
+      return {
+        folders: groups(inMonth, (r) => `W${weekOf(r.date!).week}`).map(([k, v]) => {
+          const w = weekOf(v[0]!.date!)
+          return { key: k, name: k, hint: `${w.from}–${w.to} ${MONTHS[Number(month) - 1]!.slice(0, 3)}`, items: v }
+        }),
+      }
+    }
+    return { files: inWeek.toSorted((a, b) => b.date!.localeCompare(a.date!)) }
+  }, [sorted, path])
+
+  const crumbs = area === 'stashed' ? ['Stash'] : ['Sorted', ...path.map((p, i) => (i === 1 ? MONTHS[Number(p) - 1]! : p))]
+  const goTo = (depth: number) => { setSelected(null); setNotice(''); setPath((p) => p.slice(0, depth)) }
+  const stashed = lists.stashed ?? []
+
+  const bar = (
+    <div className="flex flex-wrap items-center gap-2">
+      {([['stashed', `Stashed${lists.stashed ? ` (${stashed.length})` : ''}`], ['sorted', 'Sorted']] as const).map(([key, label]) => (
+        <button key={key} type="button" onClick={() => { setArea(key); setPath([]); setSelected(null); setNotice('') }}
+          className={`flex min-h-11 items-center gap-2 border px-4 text-sm font-bold ${area === key ? 'border-ink bg-ink text-white' : 'border-line bg-surface text-ink hover:bg-white'}`}>
+          {key === 'stashed' ? <Inbox aria-hidden="true" className="size-4" /> : <FolderCheck aria-hidden="true" className="size-4" />}
           {label}
         </button>
       ))}
+      <nav aria-label="Folder" className="ml-1 flex flex-wrap items-center gap-1 text-sm font-bold text-muted">
+        {crumbs.map((c, i) => (
+          <span key={i} className="flex items-center gap-1">
+            {i > 0 ? <ChevronRight aria-hidden="true" className="size-4" /> : null}
+            {i < crumbs.length - 1 || selected ? (
+              <button type="button" onClick={() => goTo(Math.max(0, i))} className="min-h-9 px-1 underline-offset-2 hover:text-ink hover:underline">{c}</button>
+            ) : <span className="px-1 text-ink">{c}</span>}
+          </span>
+        ))}
+        {selected && detail ? (<><ChevronRight aria-hidden="true" className="size-4" /><span className="px-1 text-ink">{detail.vendor ?? detail.receiptKey}</span></>) : null}
+      </nav>
     </div>
   )
-  if (error && !list) return <Panel className="p-5">{switcher}<p role="alert" className="text-sm font-bold text-serious">{error}</p></Panel>
-  if (!list) return <Panel className="p-5">{switcher}<p className="text-sm text-muted">Loading the stash…</p></Panel>
-  if (!sorted.length) {
+
+  if (error && !lists.stashed) return <Panel className="space-y-3 p-5">{bar}<p role="alert" className="text-sm font-bold text-serious">{error}</p></Panel>
+  if (!lists.stashed) return <Panel className="space-y-3 p-5">{bar}<p className="text-sm text-muted">Loading the receipts…</p></Panel>
+
+  // One receipt open: its scan beside its lines.
+  if (selected) {
     return (
-      <Panel className="p-5">
-        {switcher}
-        {view === 'toSort' ? (
-          <EmptyState title="Nothing to sort" hint="Receipts sent to Chopper on Telegram show up here, already in the books as not categorised, until their lines are sorted." />
-        ) : (
-          <EmptyState title="Nothing sorted yet" hint="Receipts you have sorted show up here, to reopen and correct." />
-        )}
-      </Panel>
+      <div className="space-y-3">
+        {bar}
+        <button type="button" onClick={() => { setSelected(null); setNotice('') }} className="flex min-h-11 items-center gap-1 text-sm font-bold text-ink hover:underline">
+          <ChevronLeft aria-hidden="true" className="size-4" /> Back to {crumbs[crumbs.length - 1]}
+        </button>
+        {detail ? (
+          <Panel className="p-4 sm:p-5">
+            {notice ? <p role="status" className="mb-3 flex items-center gap-2 text-sm font-bold text-green-800"><Check aria-hidden="true" className="size-4" />{notice}</p> : null}
+            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="lg:sticky lg:top-4 lg:h-[calc(100vh-8rem)]">
+                <ScanViewer key={detail.receiptKey} receiptKey={detail.receiptKey} hasOriginal={detail.hasOriginal} />
+              </div>
+              {editing ? (
+                <ReadingEditor detail={detail} onCancel={() => setEditing(false)} onSaved={(m) => void done(m)} />
+              ) : (
+                <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} />
+              )}
+            </div>
+          </Panel>
+        ) : <Panel className="p-5"><p className="text-sm text-muted">Opening the receipt…</p></Panel>}
+      </div>
     )
   }
 
+  const grid = 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[18rem_minmax(0,1fr)]">
-      <Panel className="p-2">
-        <div className="px-1 pt-1">{switcher}</div>
-        <p className="px-2 pb-2 text-xs font-bold uppercase tracking-wider text-muted">{sorted.length} {view === 'toSort' ? 'to sort' : 'sorted'}</p>
-        <ul className="space-y-1">
-          {sorted.map((r) => (
-            <li key={r.receiptKey}>
-              <button
-                type="button"
-                onClick={() => { setSelected(r.receiptKey); setNotice('') }}
-                className={`w-full border-l-4 px-3 py-2 text-left ${selected === r.receiptKey ? 'border-ink bg-canvas' : 'border-transparent hover:bg-canvas'}`}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-sm font-black">{r.vendor ?? 'Reading…'}</span>
-                  <span className="tabular text-sm font-bold">{formatRinggit((view === 'toSort' ? r.pendingSen : r.bookedSen) || r.totalSen || 0)}</span>
-                </span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted">
-                  <span>{r.date ? formatDate(r.date) : '—'} · {r.receiptKey}</span>
-                  {r.duplicate ? <Badge tone="warning">Duplicate?</Badge> : null}
-                  {r.problem || !r.ready ? <Badge tone="warning">Check</Badge> : null}
-                  {r.bookedSen ? <Badge tone="info">Part sorted</Badge> : null}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Panel>
-
-      {detail ? (
-        <Panel className="p-4 sm:p-5">
-          {notice ? <p role="status" className="mb-3 flex items-center gap-2 text-sm font-bold text-green-800"><Check aria-hidden="true" className="size-4" />{notice}</p> : null}
-          <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="lg:sticky lg:top-4 lg:h-[calc(100vh-8rem)]">
-              <ScanViewer key={detail.receiptKey} receiptKey={detail.receiptKey} hasOriginal={detail.hasOriginal} />
-            </div>
-            {editing ? (
-              <ReadingEditor detail={detail} onCancel={() => setEditing(false)} onSaved={(m) => void done(m)} />
-            ) : (
-              <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} />
-            )}
+    <div className="space-y-4">
+      {bar}
+      {area === 'stashed' ? (
+        stashed.length ? (
+          <div className={grid}>
+            {stashed.map((r) => <FileCard key={r.receiptKey} receipt={r} sorted={false} onOpen={() => setSelected(r.receiptKey)} />)}
           </div>
-        </Panel>
+        ) : (
+          <EmptyState title="Nothing to sort" hint="Receipts sent to Chopper on Telegram show up here, already in the books as not categorised, until their lines are sorted." />
+        )
+      ) : 'folders' in level ? (
+        level.folders!.length ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {level.folders!.map((f) => <FolderTile key={f.key} name={f.name} hint={'hint' in f ? (f.hint as string) : undefined} count={f.items.length} onOpen={() => setPath((p) => [...p, f.key])} />)}
+          </div>
+        ) : (
+          <EmptyState title="Nothing sorted yet" hint="Receipts you sort are filed here by year, month and week, as Chopper files them in Drive." />
+        )
       ) : (
-        <Panel className="grid min-h-60 place-items-center p-5 text-sm text-muted">
-          <span className="flex items-center gap-2"><ImageIcon aria-hidden="true" className="size-4" /> Pick a receipt to sort it.</span>
-        </Panel>
+        <div className={grid}>
+          {level.files!.map((r) => <FileCard key={r.receiptKey} receipt={r} sorted onOpen={() => setSelected(r.receiptKey)} />)}
+        </div>
       )}
     </div>
   )
