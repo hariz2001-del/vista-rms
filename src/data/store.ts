@@ -274,45 +274,42 @@ export function useDemoStore(_enabled = true) {
     [],
   )
 
-  /** Put a stall-funded expense's money back in the book, as the API does. */
-  const reverseExpense = useCallback((expense: Expense, why: string) => {
+  /** Take an expense's own cash line out of the book, as the API does when it is edited or deleted. */
+  const dropCashLine = useCallback((expense: Expense) => {
     if (expense.paidBy !== 'STALL_FUNDS') return
-    setLedger((current) => [
-      ...current,
-      {
-        id: current.reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
-        businessDate: expense.businessDate,
-        entryAt: new Date().toISOString(),
-        direction: 'MONEY_IN',
-        amountSen: expense.amountSen,
-        category: expense.category === 'CAPITAL_ASSET' ? 'CAPITAL_ASSET' : 'OPERATING_EXPENSE',
-        description: `${why} · ${expense.description}`,
-        brandId: expense.brandId,
-        orderId: null,
-        shiftId: null,
-      },
-    ])
+    setLedger((current) => {
+      const at = current.findIndex(
+        (entry) =>
+          entry.direction === 'MONEY_OUT' &&
+          entry.businessDate === expense.businessDate &&
+          entry.amountSen === expense.amountSen &&
+          entry.description === expense.description &&
+          entry.brandId === expense.brandId &&
+          entry.orderId === null,
+      )
+      return at < 0 ? current : current.filter((_, index) => index !== at)
+    })
   }, [])
 
-  // The demo keeps it simple: a correction always reverses and re-books.
+  // An edit changes the expense's line rather than adding a reversing one.
   const updateExpense = useCallback(
     (expenseId: string, input: NewExpense) => {
       const old = expenses.find((candidate) => candidate.id === expenseId)
       if (!old) return
-      reverseExpense(old, 'Corrected')
+      dropCashLine(old)
       addExpense(input, expenseId)
     },
-    [expenses, reverseExpense, addExpense],
+    [expenses, dropCashLine, addExpense],
   )
 
   const deleteExpense = useCallback(
     (expenseId: string) => {
       const old = expenses.find((candidate) => candidate.id === expenseId)
       if (!old) return
-      reverseExpense(old, 'Deleted')
+      dropCashLine(old)
       setExpenses((current) => current.filter((candidate) => candidate.id !== expenseId))
     },
-    [expenses, reverseExpense],
+    [expenses, dropCashLine],
   )
 
   // There is deliberately no `resolveFlag` or `clearReview` here. The owner does

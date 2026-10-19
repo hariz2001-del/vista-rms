@@ -225,6 +225,8 @@ export type Expense = {
   /** For a partner-paid expense: has the stall settled up with them? */
   isSettled: boolean
   isLocked: boolean
+  /** Recorded by Chopper when it read the receipt; sorted under Expenses › Stash. */
+  uncategorised?: boolean
 }
 
 // ---------------------------------------------------------------------------

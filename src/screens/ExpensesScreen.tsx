@@ -1,5 +1,5 @@
 import { HandCoins, Pencil, Trash2 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { ExpenseReceipt } from '../components/ExpenseReceipt.tsx'
 import { OwedToPartners } from '../components/OwedToPartners.tsx'
@@ -10,6 +10,8 @@ import { formatQuantity } from '../domain/expense-items.ts'
 import { formatRinggit } from '../domain/money.ts'
 import { formatDate, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
 import type { Expense, ExpenseCategory, PaymentMethod } from '../domain/types.ts'
+import { IS_DEMO } from '../lib/mode.ts'
+import { StashTab, stashApi } from './expenses/StashTab.tsx'
 
 // Wages are not in the form's list: they are written by paying a payslip.
 const CATEGORY_LABEL = {
@@ -23,7 +25,8 @@ const METHOD_LABEL = Object.fromEntries(
 
 /** Wages belong to their payslip, and a settled period is frozen. */
 function canChange(expense: Expense): boolean {
-  return !expense.isLocked && expense.category !== 'WAGES'
+  // A receipt Chopper recorded is sorted under the Stash tab, line by line.
+  return !expense.isLocked && expense.category !== 'WAGES' && !expense.uncategorised
 }
 
 /** A partner already paid back for it: the payment happened, so it stays. */
@@ -72,6 +75,14 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
     }
   }
 
+  const [tab, setTab] = useState<'log' | 'stash'>('log')
+  const [stashCount, setStashCount] = useState(0)
+  const notCategorised = store.expenses.filter((expense) => expense.uncategorised).length
+  useEffect(() => {
+    if (IS_DEMO) return
+    stashApi.list().then((r) => setStashCount(r.count)).catch(() => {})
+  }, [notCategorised])
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div className="border-b border-line pb-5">
@@ -84,9 +95,31 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
         </p>
       </div>
 
-      {withSettlement ? <OwedToPartners store={store} /> : null}
+      {IS_DEMO ? null : (
+        <div role="tablist" aria-label="Expenses" className="flex gap-1 border-b border-line">
+          {([['log', 'Log & history'], ['stash', 'Stash from Chopper']] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={`-mb-px flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-bold ${tab === key ? 'border-ink text-ink' : 'border-transparent text-muted hover:text-ink'}`}
+            >
+              {label}
+              {key === 'stash' && stashCount > 0 ? (
+                <span className="grid min-w-5 place-items-center rounded-full bg-[#e35f27] px-1.5 text-xs font-black text-white">{stashCount}</span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      {tab === 'stash' && !IS_DEMO ? <StashTab store={store} onCount={setStashCount} /> : null}
+
+      {tab === 'log' && withSettlement ? <OwedToPartners store={store} /> : null}
+
+      <div className={`grid items-start gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] ${tab === 'log' ? '' : 'hidden'}`}>
         <Panel className="scroll-mt-4 p-4 sm:p-5">
           <div ref={formTop} />
           {editing ? (
@@ -150,7 +183,7 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
                           {expense.receiptTime ? `, ${expense.receiptTime}` : ''}
                         </span>
                         <span>·</span>
-                        <span>{CATEGORY_LABEL[expense.category] ?? expense.category}</span>
+                        <span>{expense.uncategorised ? 'Not categorised' : (CATEGORY_LABEL[expense.category] ?? expense.category)}</span>
                         {withSettlement ? (
                           <>
                             <span>·</span>
@@ -176,6 +209,11 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
                       </p>
                     </div>
 
+                    {expense.uncategorised ? (
+                      <button type="button" onClick={() => setTab('stash')} className="inline-flex">
+                        <Badge tone="warning">Not categorised · sort it</Badge>
+                      </button>
+                    ) : null}
                     {expense.category === 'CAPITAL_ASSET' ? <Badge tone="info">Equipment</Badge> : null}
 
                     {expense.paidBy !== 'STALL_FUNDS' && !expense.isSettled ? (
