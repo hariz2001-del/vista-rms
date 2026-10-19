@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronLeft, ChevronRight, Folder, FolderCheck, Image as ImageIcon, Inbox, Pencil, Plus, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, FolderCheck, Image as ImageIcon, Inbox, Pencil, Plus, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CATEGORIES, PAYMENT_METHODS } from '../../components/ExpenseForm.tsx'
 import { Badge, EmptyState, Panel } from '../../components/primitives.tsx'
@@ -478,17 +478,6 @@ function Sorter({ store, detail, onDone, onEdit }: { store: VistaStore; detail: 
   )
 }
 
-/** Monday–Sunday weeks inside the month, as Chopper files them in Drive: W1 runs from the 1st to the first Sunday. */
-function weekOf(date: string): { week: number; from: number; to: number } {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number]
-  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7
-  const week = Math.floor((d - 1 + lead) / 7) + 1
-  const days = new Date(Date.UTC(y, m, 0)).getUTCDate()
-  const from = Math.max(1, (week - 1) * 7 - lead + 1)
-  return { week, from, to: Math.min(days, from + (week === 1 ? 6 - lead : 6)) }
-}
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
 /** A receipt as a file: its scan's preview, loaded when it scrolls into view. */
 function FileCard({ receipt, sorted, onOpen }: { receipt: StashSummary; sorted: boolean; onOpen: () => void }) {
   const box = useRef<HTMLButtonElement>(null)
@@ -537,26 +526,13 @@ function FileCard({ receipt, sorted, onOpen }: { receipt: StashSummary; sorted: 
   )
 }
 
-function FolderTile({ name, hint, count, onOpen }: { name: string; hint?: string; count: number; onOpen: () => void }) {
-  return (
-    <button type="button" onClick={onOpen} className="flex min-h-16 items-center gap-3 border border-line bg-surface px-3 py-2 text-left hover:bg-white">
-      <Folder aria-hidden="true" className="size-7 shrink-0 fill-amber-200 text-amber-600" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-black text-ink">{name}</span>
-        <span className="block text-xs font-semibold text-muted">{hint ? `${hint} · ` : ''}{count} receipt{count === 1 ? '' : 's'}</span>
-      </span>
-    </button>
-  )
-}
-
 /**
- * Chopper's receipts, browsed like the Drive they are filed in: the Stash (still
- * to sort) as one folder, and Sorted by year, month and week. Opening one shows
- * its scan beside its lines, to sort, correct or change.
+ * Chopper's receipts as a grid of their scans: Stashed (still to sort) and
+ * Sorted (already in the books), newest first. Opening one shows its scan
+ * beside its lines, to sort, correct or change.
  */
 export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: number) => void }) {
   const [area, setArea] = useState<'stashed' | 'sorted'>('stashed')
-  const [path, setPath] = useState<string[]>([])
   const [lists, setLists] = useState<{ stashed: StashSummary[] | null; sorted: StashSummary[] | null }>({ stashed: null, sorted: null })
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -597,39 +573,15 @@ export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: n
     if (selected) setDetail(await stashApi.detail(selected).catch(() => null))
   }
 
-  // Sorted, as folders: year › month › week, newest first.
-  const sorted = useMemo(() => (lists.sorted ?? []).filter((r) => r.date), [lists.sorted])
-  const level = useMemo(() => {
-    const [year, month, week] = path
-    const inYear = sorted.filter((r) => !year || r.date!.startsWith(year + '-'))
-    const inMonth = inYear.filter((r) => !month || r.date!.slice(5, 7) === month)
-    const inWeek = inMonth.filter((r) => !week || `W${weekOf(r.date!).week}` === week)
-    const groups = (items: StashSummary[], keyOf: (r: StashSummary) => string) => {
-      const map = new Map<string, StashSummary[]>()
-      for (const r of items) map.set(keyOf(r), [...(map.get(keyOf(r)) ?? []), r])
-      return [...map.entries()].toSorted((a, b) => b[0].localeCompare(a[0], undefined, { numeric: true }))
-    }
-    if (!year) return { folders: groups(sorted, (r) => r.date!.slice(0, 4)).map(([k, v]) => ({ key: k, name: k, items: v })) }
-    if (!month) return { folders: groups(inYear, (r) => r.date!.slice(5, 7)).map(([k, v]) => ({ key: k, name: `${k} · ${MONTHS[Number(k) - 1]}`, items: v })) }
-    if (!week) {
-      return {
-        folders: groups(inMonth, (r) => `W${weekOf(r.date!).week}`).map(([k, v]) => {
-          const w = weekOf(v[0]!.date!)
-          return { key: k, name: k, hint: `${w.from}–${w.to} ${MONTHS[Number(month) - 1]!.slice(0, 3)}`, items: v }
-        }),
-      }
-    }
-    return { files: inWeek.toSorted((a, b) => b.date!.localeCompare(a.date!)) }
-  }, [sorted, path])
-
-  const crumbs = area === 'stashed' ? ['Stash'] : ['Sorted', ...path.map((p, i) => (i === 1 ? MONTHS[Number(p) - 1]! : p))]
-  const goTo = (depth: number) => { setSelected(null); setNotice(''); setPath((p) => p.slice(0, depth)) }
+  const sorted = useMemo(() => (lists.sorted ?? []).toSorted((a, b) => (b.date ?? '').localeCompare(a.date ?? '')), [lists.sorted])
+  const crumbs = [area === 'stashed' ? 'Stashed' : 'Sorted']
+  const goTo = () => { setSelected(null); setNotice('') }
   const stashed = lists.stashed ?? []
 
   const bar = (
     <div className="flex flex-wrap items-center gap-2">
       {([['stashed', `Stashed${lists.stashed ? ` (${stashed.length})` : ''}`], ['sorted', 'Sorted']] as const).map(([key, label]) => (
-        <button key={key} type="button" onClick={() => { setArea(key); setPath([]); setSelected(null); setNotice('') }}
+        <button key={key} type="button" onClick={() => { setArea(key); setSelected(null); setNotice('') }}
           className={`flex min-h-11 items-center gap-2 border px-4 text-sm font-bold ${area === key ? 'border-ink bg-ink text-white' : 'border-line bg-surface text-ink hover:bg-white'}`}>
           {key === 'stashed' ? <Inbox aria-hidden="true" className="size-4" /> : <FolderCheck aria-hidden="true" className="size-4" />}
           {label}
@@ -640,7 +592,7 @@ export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: n
           <span key={i} className="flex items-center gap-1">
             {i > 0 ? <ChevronRight aria-hidden="true" className="size-4" /> : null}
             {i < crumbs.length - 1 || selected ? (
-              <button type="button" onClick={() => goTo(Math.max(0, i))} className="min-h-9 px-1 underline-offset-2 hover:text-ink hover:underline">{c}</button>
+              <button type="button" onClick={goTo} className="min-h-9 px-1 underline-offset-2 hover:text-ink hover:underline">{c}</button>
             ) : <span className="px-1 text-ink">{c}</span>}
           </span>
         ))}
@@ -691,18 +643,12 @@ export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: n
         ) : (
           <EmptyState title="Nothing to sort" hint="Receipts sent to Chopper on Telegram show up here, already in the books as not categorised, until their lines are sorted." />
         )
-      ) : 'folders' in level ? (
-        level.folders!.length ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {level.folders!.map((f) => <FolderTile key={f.key} name={f.name} hint={'hint' in f ? (f.hint as string) : undefined} count={f.items.length} onOpen={() => setPath((p) => [...p, f.key])} />)}
-          </div>
-        ) : (
-          <EmptyState title="Nothing sorted yet" hint="Receipts you sort are filed here by year, month and week, as Chopper files them in Drive." />
-        )
-      ) : (
+      ) : sorted.length ? (
         <div className={grid}>
-          {level.files!.map((r) => <FileCard key={r.receiptKey} receipt={r} sorted onOpen={() => setSelected(r.receiptKey)} />)}
+          {sorted.map((r) => <FileCard key={r.receiptKey} receipt={r} sorted onOpen={() => setSelected(r.receiptKey)} />)}
         </div>
+      ) : (
+        <EmptyState title="Nothing sorted yet" hint="Receipts you sort show up here, to reopen, correct or change." />
       )}
     </div>
   )
