@@ -339,7 +339,7 @@ function DuplicateReview({ detail, onDone, onClose }: { detail: StashDetail; onD
         otherKey: other?.receiptKey ?? null,
         expenseIds: other?.kind === 'manual' ? other.expenseIds : null,
       })
-      onDone({ cancel: 'Dropped the new photo.', keep: 'Kept both. It stays in the books as not categorised.', replace: other?.kind === 'booked' ? 'Replaced the photo; the booking stays.' : other?.kind === 'manual' ? 'Attached the photo to that expense.' : 'Replaced: the other photo is gone.' }[action])
+      onDone({ cancel: 'Dropped the new photo.', keep: other?.kind === 'manual' ? 'Kept apart. It stays in the books as not categorised.' : 'Kept both. It stays in the books as not categorised.', replace: other?.kind === 'booked' ? 'Replaced the photo; the booking stays.' : other?.kind === 'manual' ? 'Linked: that expense now has this receipt.' : 'Replaced: the other photo is gone.' }[action])
     } catch (reason) {
       setProblem(reason instanceof Error ? reason.message : 'That could not be done.')
     } finally {
@@ -350,7 +350,7 @@ function DuplicateReview({ detail, onDone, onClose }: { detail: StashDetail; onD
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-lg font-black">Same receipt twice?</h3>
+        <h3 className="text-lg font-black">{other?.kind === 'manual' ? 'The receipt for an expense you keyed in?' : 'Same receipt twice?'}</h3>
         <button type="button" onClick={onClose} className="vista-button-secondary min-h-10 px-3 text-sm">Back</button>
       </div>
       {!others ? <p className="text-sm text-muted">Looking for it…</p> : !other ? (
@@ -380,59 +380,149 @@ function DuplicateReview({ detail, onDone, onClose }: { detail: StashDetail; onD
             </div>
           </div>
           {problem ? <p role="alert" className="text-sm font-bold text-serious">{problem}</p> : null}
-          <div className="grid gap-2 sm:grid-cols-3">
-            <button type="button" disabled={busy} onClick={() => void settle('cancel')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">✗ Cancel the new one</button>
-            <button type="button" disabled={busy} onClick={() => void settle('replace')} className="vista-button-primary min-h-12 text-sm disabled:opacity-50" title={replaceText}>⇄ Replace</button>
-            <button type="button" disabled={busy} onClick={() => void settle('keep')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">Keep both</button>
-          </div>
-          <p className="text-xs text-muted">Replace: {replaceText.toLowerCase()}.</p>
+          {other.kind === 'manual' ? (
+            <>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <button type="button" disabled={busy} onClick={() => void settle('replace')} className="vista-button-primary min-h-12 text-sm disabled:opacity-50">🔗 Link to it</button>
+                <button type="button" disabled={busy} onClick={() => void settle('keep')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">It’s a different one</button>
+                <button type="button" disabled={busy} onClick={() => void settle('cancel')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">✗ Drop the photo</button>
+              </div>
+              <p className="text-xs text-muted">Link: the expense you keyed in keeps its brand and category, and gets this receipt. Nothing is booked twice.</p>
+            </>
+          ) : (
+            <>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <button type="button" disabled={busy} onClick={() => void settle('cancel')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">✗ Cancel the new one</button>
+                <button type="button" disabled={busy} onClick={() => void settle('replace')} className="vista-button-primary min-h-12 text-sm disabled:opacity-50" title={replaceText}>⇄ Replace</button>
+                <button type="button" disabled={busy} onClick={() => void settle('keep')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">Keep both</button>
+              </div>
+              <p className="text-xs text-muted">Replace: {replaceText.toLowerCase()}.</p>
+            </>
+          )}
         </>
       )}
     </div>
   )
 }
 
-function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore; detail: StashDetail; onDone: (message: string) => void; onEdit: () => void; onReview: () => void }) {
+type Choice = { brand: string | null; category: ExpenseCategory; paidBy: PaymentSource; method: PaymentMethod | null }
+
+const chip = (active: boolean) =>
+  `min-h-11 border px-3 text-sm font-bold ${active ? 'border-ink bg-ink text-white' : 'border-line bg-surface text-ink hover:bg-white'}`
+
+/** Brand, category, who paid and how: the settings one booking gets. */
+function ChoiceFields({ store, value, onChange }: { store: VistaStore; value: Choice; onChange: (next: Choice) => void }) {
   const foodBrand = store.brands[0]
   const drinksBrand = store.brands[1]
   const withSettlement = store.settings.settlementEnabled && drinksBrand !== undefined
+  const set = (patch: Partial<Choice>) => onChange({ ...value, ...patch })
+  return (
+    <div className="space-y-3">
+      {withSettlement ? (
+        <div>
+          <p className="vista-field-label">Brand</p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {[foodBrand, drinksBrand].map((b) => b && (
+              <button key={b.id} type="button" className={chip(value.brand === b.id)} onClick={() => set({ brand: b.id })}>{b.name}</button>
+            ))}
+            <button type="button" className={chip(value.brand === null)} onClick={() => set({ brand: null })}>Shared {store.settings.sharedOverheadFoodPct}/{100 - store.settings.sharedOverheadFoodPct}</button>
+          </div>
+        </div>
+      ) : null}
+      <div>
+        <p className="vista-field-label">Category</p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {CATEGORIES.map((c) => <button key={c.value} type="button" className={chip(value.category === c.value)} onClick={() => set({ category: c.value })}>{c.label}</button>)}
+        </div>
+      </div>
+      {withSettlement ? (
+        <div>
+          <p className="vista-field-label">Who paid</p>
+          <div className="mt-1 flex flex-wrap gap-2">
+            <button type="button" className={chip(value.paidBy === 'STALL_FUNDS')} onClick={() => set({ paidBy: 'STALL_FUNDS' })}>Stall funds</button>
+            <button type="button" className={chip(value.paidBy === 'PARTNER_FOOD')} onClick={() => set({ paidBy: 'PARTNER_FOOD' })}>{foodBrand?.name} partner</button>
+            <button type="button" className={chip(value.paidBy === 'PARTNER_DRINKS')} onClick={() => set({ paidBy: 'PARTNER_DRINKS' })}>{drinksBrand?.name} partner</button>
+          </div>
+        </div>
+      ) : null}
+      <div>
+        <p className="vista-field-label">Payment</p>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {PAYMENT_METHODS.map((m) => <button key={m.value} type="button" className={chip(value.method === m.value)} onClick={() => set({ method: value.method === m.value ? null : m.value })}>{m.label}</button>)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const PART_TONES = ['bg-ink text-white', 'bg-sky-700 text-white', 'bg-amber-600 text-white', 'bg-emerald-700 text-white', 'bg-fuchsia-700 text-white']
+
+function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore; detail: StashDetail; onDone: (message: string) => void; onEdit: () => void; onReview: () => void }) {
+  const foodBrand = store.brands[0]
+  const withSettlement = store.settings.settlementEnabled && store.brands[1] !== undefined
   const pending = detail.lines.filter((line) => line.decision === 'pending')
+  const [split, setSplit] = useState(false)
   const [ticked, setTicked] = useState<number[]>(() => pending.map((line) => line.index))
-  const [category, setCategory] = useState<ExpenseCategory>(detail.guess?.category ?? 'RAW_MATERIALS')
-  const [brand, setBrand] = useState<string | null>(() => {
-    if (!withSettlement) return foodBrand?.id ?? null
-    if (detail.guess) return detail.guess.brandId
-    return foodBrand?.id ?? null
-  })
-  const [paidBy, setPaidBy] = useState<PaymentSource>('STALL_FUNDS')
-  const [method, setMethod] = useState<PaymentMethod | null>(null)
+  // Split: every open line belongs to a part (or is left out); each part is booked with its own settings.
+  const [parts, setParts] = useState<Choice[]>(() => [{
+    brand: !withSettlement ? foodBrand?.id ?? null : detail.guess ? detail.guess.brandId : foodBrand?.id ?? null,
+    category: detail.guess?.category ?? 'RAW_MATERIALS', paidBy: 'STALL_FUNDS', method: null,
+  }])
+  const [assign, setAssign] = useState<Record<number, number | 'out'>>(() => Object.fromEntries(pending.map((line) => [line.index, 0])))
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
-  // One ID per choice, kept across a retry: a lost answer never books twice.
-  const attempt = useRef<string>(crypto.randomUUID())
-  const choiceKey = JSON.stringify([ticked, category, brand, paidBy, method])
-  useEffect(() => { attempt.current = crypto.randomUUID() }, [choiceKey])
+  // One ID per booking choice, kept across a retry: a lost answer never books twice.
+  const attempts = useRef(new Map<string, string>())
+  const attemptFor = (key: string) => {
+    if (!attempts.current.has(key)) attempts.current.set(key, crypto.randomUUID())
+    return attempts.current.get(key)!
+  }
 
-  const amount = detail.lines.filter((line) => ticked.includes(line.index)).reduce((sum, line) => sum + line.amountSen, 0)
+  const sum = (indexes: number[]) => detail.lines.filter((line) => indexes.includes(line.index)).reduce((total, line) => total + line.amountSen, 0)
+  const amount = sum(ticked)
   const toggle = (index: number) => setTicked((list) => (list.includes(index) ? list.filter((i) => i !== index) : [...list, index].toSorted((a, b) => a - b)))
+  const linesOf = (part: number | 'out') => pending.filter((line) => assign[line.index] === part).map((line) => line.index)
+
+  async function bookPart(lines: number[], choice: Choice) {
+    const payload = {
+      lines, expectedSen: sum(lines), brandId: choice.brand, category: choice.category, paidBy: choice.paidBy, paymentMethod: choice.method,
+      foodSplitPct: choice.brand === null ? store.settings.sharedOverheadFoodPct : choice.brand === foodBrand?.id ? 100 : 0,
+    }
+    await apiRequest('POST', `/rms/stash/${detail.receiptKey}/book`, { submissionId: attemptFor(JSON.stringify(payload)), ...payload })
+  }
 
   async function book() {
     setBusy(true)
     setProblem('')
     try {
-      await apiRequest('POST', `/rms/stash/${detail.receiptKey}/book`, {
-        submissionId: attempt.current,
-        lines: ticked,
-        expectedSen: amount,
-        brandId: brand,
-        category,
-        paidBy,
-        paymentMethod: method,
-        foodSplitPct: brand === null ? store.settings.sharedOverheadFoodPct : brand === foodBrand?.id ? 100 : 0,
-      })
+      await bookPart(ticked, parts[0]!)
       onDone(`Booked ${formatRinggit(amount)} from ${detail.vendor ?? detail.receiptKey}.`)
     } catch (reason) {
       setProblem(reason instanceof Error ? reason.message : 'That could not be booked.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function bookAll() {
+    const out = linesOf('out')
+    if (out.length && !window.confirm(`Leave ${out.length === 1 ? 'one line' : `${out.length} lines`} (${formatRinggit(sum(out))}) out of the books?`)) return
+    setBusy(true)
+    setProblem('')
+    let booked = 0
+    try {
+      for (const [n, choice] of parts.entries()) {
+        const lines = linesOf(n)
+        if (!lines.length) continue
+        await bookPart(lines, choice)
+        booked += 1
+      }
+      if (out.length) await apiRequest('POST', `/rms/stash/${detail.receiptKey}/scrap`, { lines: out })
+      onDone(`Split ${detail.vendor ?? detail.receiptKey} into ${booked} booking${booked === 1 ? '' : 's'}${out.length ? `, ${formatRinggit(sum(out))} left out` : ''}.`)
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : 'That could not be booked.'
+      if (booked) onDone(`Booked ${booked} part${booked === 1 ? '' : 's'}; the next one failed: ${message}`)
+      else setProblem(message)
     } finally {
       setBusy(false)
     }
@@ -452,8 +542,13 @@ function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore
     }
   }
 
-  const choice = (active: boolean) =>
-    `min-h-11 border px-3 text-sm font-bold ${active ? 'border-ink bg-ink text-white' : 'border-line bg-surface text-ink hover:bg-white'}`
+  function removePart(n: number) {
+    setParts((list) => list.filter((_, i) => i !== n))
+    setAssign((map) => Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v === 'out' ? v : v === n ? 0 : v > n ? v - 1 : v])))
+  }
+
+  const usedParts = parts.filter((_, n) => linesOf(n).length > 0).length
+  const splitTotal = sum(pending.map((line) => line.index).filter((i) => assign[i] !== 'out'))
 
   return (
     <div className="space-y-4">
@@ -476,8 +571,8 @@ function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore
         <div className="space-y-1 border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {detail.duplicate ? (
             <div className="flex flex-wrap items-center gap-2">
-              <p className="flex flex-1 gap-2 font-bold"><AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />Looks like a receipt that is already in Vista or in the stash.</p>
-              <button type="button" onClick={onReview} className="min-h-10 rounded border border-amber-700 bg-white px-3 text-sm font-bold text-amber-900">⚑ Review duplicate</button>
+              <p className="flex flex-1 gap-2 font-bold"><AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />Looks like a receipt already in Vista, or an expense keyed in by hand.</p>
+              <button type="button" onClick={onReview} className="min-h-10 rounded border border-amber-700 bg-white px-3 text-sm font-bold text-amber-900">⚑ Review</button>
             </div>
           ) : null}
           {detail.problem ? <p>{detail.problem}</p> : null}
@@ -486,11 +581,41 @@ function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore
         </div>
       ) : null}
 
+      {pending.length > 1 ? (
+        <div className="flex border border-line" role="group" aria-label="How to book">
+          <button type="button" aria-pressed={!split} onClick={() => setSplit(false)} className={`min-h-10 flex-1 text-sm font-bold ${!split ? 'bg-ink text-white' : 'bg-surface'}`}>One booking</button>
+          <button type="button" aria-pressed={split} onClick={() => setSplit(true)} className={`min-h-10 flex-1 text-sm font-bold ${split ? 'bg-ink text-white' : 'bg-surface'}`}>Split by line</button>
+        </div>
+      ) : null}
+
       <fieldset>
-        <legend className="vista-field-label">Lines — tick the ones that go together</legend>
+        <legend className="vista-field-label">{split ? 'Lines — pick a part for each' : 'Lines — tick the ones that go together'}</legend>
         <ul className="mt-1 divide-y divide-line border border-line bg-surface">
           {detail.lines.map((line) => {
             const open = line.decision === 'pending'
+            const label = (
+              <span className={`min-w-0 flex-1 ${line.decision === 'scrapped' ? 'line-through' : ''}`}>
+                <span className="font-bold text-ink">{line.index + 1}. {line.name}</span>
+                {line.quantityMilli !== 1000 ? <span className="text-muted"> · {quantity(line.quantityMilli)} × {formatRinggit(line.unitPriceSen)}</span> : null}
+              </span>
+            )
+            if (open && split) {
+              const at = assign[line.index] ?? 0
+              return (
+                <li key={line.index} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-sm">
+                  {label}
+                  <span className="tabular font-bold">{formatRinggit(line.amountSen)}</span>
+                  <span className="flex w-full flex-wrap gap-1">
+                    {parts.map((_, n) => (
+                      <button key={n} type="button" onClick={() => setAssign((map) => ({ ...map, [line.index]: n }))} aria-pressed={at === n}
+                        className={`min-h-9 border px-2 text-xs font-black ${at === n ? `${PART_TONES[n % PART_TONES.length]} border-transparent` : 'border-line bg-white text-ink'}`}>Part {n + 1}</button>
+                    ))}
+                    <button type="button" onClick={() => setAssign((map) => ({ ...map, [line.index]: 'out' }))} aria-pressed={at === 'out'}
+                      className={`min-h-9 border px-2 text-xs font-bold ${at === 'out' ? 'border-serious bg-serious text-white' : 'border-line bg-white text-muted'}`}>Leave out</button>
+                  </span>
+                </li>
+              )
+            }
             return (
               <li key={line.index}>
                 <label className={`flex min-h-12 items-center gap-3 px-3 py-2 text-sm ${open ? 'cursor-pointer hover:bg-white' : 'text-muted'}`}>
@@ -501,10 +626,7 @@ function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore
                   ) : (
                     <X aria-label="Left out" className="size-5 text-serious" />
                   )}
-                  <span className={`min-w-0 flex-1 ${line.decision === 'scrapped' ? 'line-through' : ''}`}>
-                    <span className="font-bold text-ink">{line.index + 1}. {line.name}</span>
-                    {line.quantityMilli !== 1000 ? <span className="text-muted"> · {quantity(line.quantityMilli)} × {formatRinggit(line.unitPriceSen)}</span> : null}
-                  </span>
+                  {label}
                   <span className="tabular font-bold">{formatRinggit(line.amountSen)}</span>
                 </label>
               </li>
@@ -519,57 +641,42 @@ function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore
             <p className="text-xs font-semibold text-muted">Filled in from {detail.guess.source === 'vendor history' ? 'past receipts from this shop' : 'what these items were booked as before'} — change anything that’s wrong.</p>
           ) : null}
 
-          {withSettlement ? (
-            <div>
-              <p className="vista-field-label">Brand</p>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {[foodBrand, drinksBrand].map((b) => b && (
-                  <button key={b.id} type="button" className={choice(brand === b.id)} onClick={() => setBrand(b.id)}>{b.name}</button>
-                ))}
-                <button type="button" className={choice(brand === null)} onClick={() => setBrand(null)}>Shared {store.settings.sharedOverheadFoodPct}/{100 - store.settings.sharedOverheadFoodPct}</button>
-              </div>
-            </div>
-          ) : null}
-
-          <div>
-            <p className="vista-field-label">Category</p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {CATEGORIES.map((c) => (
-                <button key={c.value} type="button" className={choice(category === c.value)} onClick={() => setCategory(c.value)}>{c.label}</button>
+          {split ? (
+            <>
+              {parts.map((choice, n) => (
+                <section key={n} className="space-y-3 border border-line p-3">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 text-xs font-black ${PART_TONES[n % PART_TONES.length]}`}>Part {n + 1}</span>
+                    <span className="flex-1 text-sm font-bold">{linesOf(n).length ? `${linesOf(n).length} line${linesOf(n).length === 1 ? '' : 's'} · ${formatRinggit(sum(linesOf(n)))}` : <span className="text-muted">No lines yet — pick Part {n + 1} on a line</span>}</span>
+                    {n > 0 ? <button type="button" onClick={() => removePart(n)} className="min-h-9 px-2 text-xs font-bold text-muted hover:text-serious">Remove</button> : null}
+                  </div>
+                  <ChoiceFields store={store} value={choice} onChange={(next) => setParts((list) => list.map((c, i) => (i === n ? next : c)))} />
+                </section>
               ))}
-            </div>
-          </div>
-
-          {withSettlement ? (
-            <div>
-              <p className="vista-field-label">Who paid</p>
-              <div className="mt-1 flex flex-wrap gap-2">
-                <button type="button" className={choice(paidBy === 'STALL_FUNDS')} onClick={() => setPaidBy('STALL_FUNDS')}>Stall funds</button>
-                <button type="button" className={choice(paidBy === 'PARTNER_FOOD')} onClick={() => setPaidBy('PARTNER_FOOD')}>{foodBrand?.name} partner</button>
-                <button type="button" className={choice(paidBy === 'PARTNER_DRINKS')} onClick={() => setPaidBy('PARTNER_DRINKS')}>{drinksBrand?.name} partner</button>
+              {parts.length < pending.length ? (
+                <button type="button" onClick={() => setParts((list) => [...list, { ...list[list.length - 1]! }])} className="vista-button-secondary flex min-h-11 w-full items-center justify-center gap-2 text-sm">
+                  <Plus aria-hidden="true" className="size-4" /> Add a part
+                </button>
+              ) : null}
+              {problem ? <p role="alert" className="text-sm font-bold text-serious">{problem}</p> : null}
+              <button type="button" disabled={busy || !detail.ready || (!usedParts && !linesOf('out').length)} onClick={() => void bookAll()} className="vista-button-primary min-h-12 w-full disabled:opacity-50">
+                {busy ? 'Working…' : usedParts ? `Book ${usedParts} part${usedParts === 1 ? '' : 's'} · ${formatRinggit(splitTotal)}` : 'Leave them all out'}
+              </button>
+            </>
+          ) : (
+            <>
+              <ChoiceFields store={store} value={parts[0]!} onChange={(next) => setParts((list) => [next, ...list.slice(1)])} />
+              {problem ? <p role="alert" className="text-sm font-bold text-serious">{problem}</p> : null}
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={busy || !ticked.length || !detail.ready} onClick={() => void book()} className="vista-button-primary min-h-12 flex-1 disabled:opacity-50">
+                  {busy ? 'Working…' : ticked.length ? `Book ${ticked.length === pending.length ? 'it' : 'ticked lines'} · ${formatRinggit(amount)}` : 'Tick the lines first'}
+                </button>
+                <button type="button" disabled={busy || !ticked.length} onClick={() => void scrap()} className="vista-button-secondary min-h-12 disabled:opacity-50">
+                  Leave out
+                </button>
               </div>
-            </div>
-          ) : null}
-
-          <div>
-            <p className="vista-field-label">Payment</p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {PAYMENT_METHODS.map((m) => (
-                <button key={m.value} type="button" className={choice(method === m.value)} onClick={() => setMethod(method === m.value ? null : m.value)}>{m.label}</button>
-              ))}
-            </div>
-          </div>
-
-          {problem ? <p role="alert" className="text-sm font-bold text-serious">{problem}</p> : null}
-
-          <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={busy || !ticked.length || !detail.ready} onClick={() => void book()} className="vista-button-primary min-h-12 flex-1 disabled:opacity-50">
-              {busy ? 'Working…' : ticked.length ? `Book ${ticked.length === pending.length ? 'it' : 'ticked lines'} · ${formatRinggit(amount)}` : 'Tick the lines first'}
-            </button>
-            <button type="button" disabled={busy || !ticked.length} onClick={() => void scrap()} className="vista-button-secondary min-h-12 disabled:opacity-50">
-              Leave out
-            </button>
-          </div>
+            </>
+          )}
         </>
       ) : (
         <p className="text-sm font-bold text-green-800">All sorted. Chopper files the scan in Drive.</p>
@@ -580,8 +687,8 @@ function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore
   )
 }
 
-/** A receipt as a file: its scan's preview, loaded when it scrolls into view. */
-function FileCard({ receipt, sorted, onOpen }: { receipt: StashSummary; sorted: boolean; onOpen: () => void }) {
+/** A receipt in the list: a small preview of its scan (loaded when it scrolls into view), shop, date and amount. */
+function ReceiptRow({ receipt, sorted, active, onOpen }: { receipt: StashSummary; sorted: boolean; active: boolean; onOpen: () => void }) {
   const box = useRef<HTMLButtonElement>(null)
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
@@ -602,36 +709,34 @@ function FileCard({ receipt, sorted, onOpen }: { receipt: StashSummary; sorted: 
   }, [receipt.receiptKey])
   const amount = (sorted ? receipt.bookedSen : receipt.pendingSen) || receipt.totalSen || 0
   return (
-    <button ref={box} type="button" onClick={onOpen} className="group flex flex-col overflow-hidden border border-line bg-surface text-left transition-shadow hover:shadow-md focus-visible:outline-2">
-      <span className="relative block aspect-[3/4] w-full overflow-hidden bg-canvas">
-        {url ? <img src={url} alt="" className="size-full object-cover object-top" /> : (
-          <span className="grid size-full place-items-center text-muted">
-            {failed ? <ImageIcon aria-hidden="true" className="size-8" /> : <span className="text-xs">Loading…</span>}
-          </span>
-        )}
-        <span className="absolute left-1.5 top-1.5 flex flex-wrap gap-1">
-          {receipt.duplicate ? <Badge tone="warning">Duplicate?</Badge> : null}
-          {receipt.problem || (!sorted && !receipt.ready) ? <Badge tone="warning">Check</Badge> : null}
-          {!sorted && receipt.bookedSen ? <Badge tone="info">Part sorted</Badge> : null}
-          {sorted ? <Badge tone="good">Sorted</Badge> : null}
-        </span>
+    <button ref={box} type="button" onClick={onOpen} aria-current={active ? 'true' : undefined}
+      className={`flex w-full items-center gap-3 border-l-4 px-3 py-2 text-left ${active ? 'border-ink bg-canvas' : 'border-transparent hover:bg-white'}`}>
+      <span className="grid h-14 w-11 shrink-0 place-items-center overflow-hidden border border-line bg-canvas">
+        {url ? <img src={url} alt="" className="size-full object-cover object-top" /> : failed ? <ImageIcon aria-hidden="true" className="size-4 text-muted" /> : null}
       </span>
-      <span className="block px-2.5 py-2">
-        <span className="block truncate text-sm font-black text-ink">{receipt.vendor ?? 'Reading…'}</span>
-        <span className="mt-0.5 flex items-center justify-between gap-2 text-xs font-semibold text-muted">
-          <span>{receipt.date ? formatDate(receipt.date) : '—'}</span>
-          <span className="tabular font-bold text-ink">{formatRinggit(amount)}</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center justify-between gap-2">
+          <span className="truncate text-sm font-black text-ink">{receipt.vendor ?? 'Reading…'}</span>
+          <span className="tabular shrink-0 text-sm font-bold text-ink">{formatRinggit(amount)}</span>
         </span>
-        <span className="block truncate text-[0.68rem] text-muted">{receipt.receiptKey}</span>
+        <span className="flex items-center justify-between gap-2 text-xs font-semibold text-muted">
+          <span className="truncate">{receipt.date ? formatDate(receipt.date) : '—'} · {receipt.receiptKey}</span>
+          <span className="flex shrink-0 gap-1">
+            {receipt.duplicate ? <Badge tone="warning">Duplicate?</Badge> : null}
+            {receipt.problem || (!sorted && !receipt.ready) ? <Badge tone="warning">Check</Badge> : null}
+            {!sorted && receipt.bookedSen ? <Badge tone="info">Part sorted</Badge> : null}
+            {sorted && receipt.pendingSen ? <Badge tone="info">Part open</Badge> : null}
+          </span>
+        </span>
       </span>
     </button>
   )
 }
 
 /**
- * Chopper's receipts as a grid of their scans: Stashed (still to sort) and
- * Sorted (already in the books), newest first. Opening one shows its scan
- * beside its lines, to sort, correct or change.
+ * Chopper's receipts as a list: Stashed (still to sort) and Sorted (already in
+ * the books), newest first. The open one shows beside the list, its scan next
+ * to its lines, to sort, split, correct or change.
  */
 export function StashTab({ store, onCount, openKey = null }: { store: VistaStore; onCount: (n: number) => void; openKey?: string | null }) {
   const [area, setArea] = useState<'stashed' | 'sorted'>('stashed')
@@ -710,56 +815,56 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
   if (error && !lists.stashed) return <Panel className="space-y-3 p-5">{bar}<p role="alert" className="text-sm font-bold text-serious">{error}</p></Panel>
   if (!lists.stashed) return <Panel className="space-y-3 p-5">{bar}<p className="text-sm text-muted">Loading the receipts…</p></Panel>
 
-  // One receipt open: its scan beside its lines.
-  if (selected) {
-    return (
-      <div className="space-y-3">
-        {bar}
-        <button type="button" onClick={() => { setSelected(null); setNotice('') }} className="flex min-h-11 items-center gap-1 text-sm font-bold text-ink hover:underline">
-          <ChevronLeft aria-hidden="true" className="size-4" /> Back to {crumbs[crumbs.length - 1]}
-        </button>
-        {detail ? (
-          <Panel className="p-4 sm:p-5">
-            {notice ? <p role="status" className="mb-3 flex items-center gap-2 text-sm font-bold text-green-800"><Check aria-hidden="true" className="size-4" />{notice}</p> : null}
-            {reviewing ? (
-              <DuplicateReview detail={detail} onClose={() => setReviewing(false)} onDone={(m) => void done(m)} />
-            ) : (
-            <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="lg:sticky lg:top-4 lg:h-[calc(100vh-8rem)]">
-                <ScanViewer key={detail.receiptKey} receiptKey={detail.receiptKey} hasOriginal={detail.hasOriginal} />
-              </div>
-              {editing ? (
-                <ReadingEditor detail={detail} onCancel={() => setEditing(false)} onSaved={(m) => void done(m)} />
-              ) : (
-                <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} onReview={() => { setNotice(''); setReviewing(true) }} />
-              )}
-            </div>
-            )}
-          </Panel>
-        ) : <Panel className="p-5"><p className="text-sm text-muted">Opening the receipt…</p></Panel>}
-      </div>
-    )
-  }
+  const shown = area === 'stashed' ? stashed : sorted
+  const list = shown.length ? (
+    <Panel className="divide-y divide-line overflow-y-auto p-0 lg:max-h-[calc(100vh-10rem)]">
+      {shown.map((r) => <ReceiptRow key={r.receiptKey} receipt={r} sorted={area === 'sorted'} active={r.receiptKey === selected} onOpen={() => { setSelected(r.receiptKey); setNotice('') }} />)}
+    </Panel>
+  ) : area === 'stashed' ? (
+    <EmptyState title="Nothing to sort" hint="Receipts sent to Chopper on Telegram show up here, already in the books as not categorised, until their lines are sorted." />
+  ) : (
+    <EmptyState title="Nothing sorted yet" hint="Receipts you sort show up here, to reopen, correct or change." />
+  )
 
-  const grid = 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'
-  return (
-    <div className="space-y-4">
-      {bar}
-      {area === 'stashed' ? (
-        stashed.length ? (
-          <div className={grid}>
-            {stashed.map((r) => <FileCard key={r.receiptKey} receipt={r} sorted={false} onOpen={() => setSelected(r.receiptKey)} />)}
-          </div>
+  // The open receipt: its scan beside its lines.
+  const open = selected ? (
+    detail ? (
+      <Panel className="p-4 sm:p-5">
+        {notice ? <p role="status" className="mb-3 flex items-center gap-2 text-sm font-bold text-green-800"><Check aria-hidden="true" className="size-4" />{notice}</p> : null}
+        {reviewing ? (
+          <DuplicateReview detail={detail} onClose={() => setReviewing(false)} onDone={(m) => void done(m)} />
         ) : (
-          <EmptyState title="Nothing to sort" hint="Receipts sent to Chopper on Telegram show up here, already in the books as not categorised, until their lines are sorted." />
-        )
-      ) : sorted.length ? (
-        <div className={grid}>
-          {sorted.map((r) => <FileCard key={r.receiptKey} receipt={r} sorted onOpen={() => setSelected(r.receiptKey)} />)}
-        </div>
-      ) : (
-        <EmptyState title="Nothing sorted yet" hint="Receipts you sort show up here, to reopen, correct or change." />
-      )}
+          <div className="grid items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="h-[50vh] 2xl:sticky 2xl:top-4 2xl:h-[calc(100vh-10rem)]">
+              <ScanViewer key={detail.receiptKey} receiptKey={detail.receiptKey} hasOriginal={detail.hasOriginal} />
+            </div>
+            {editing ? (
+              <ReadingEditor detail={detail} onCancel={() => setEditing(false)} onSaved={(m) => void done(m)} />
+            ) : (
+              <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} onReview={() => { setNotice(''); setReviewing(true) }} />
+            )}
+          </div>
+        )}
+      </Panel>
+    ) : <Panel className="p-5"><p className="text-sm text-muted">Opening the receipt…</p></Panel>
+  ) : null
+
+  return (
+    <div className="space-y-3">
+      {bar}
+      <div className="grid items-start gap-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
+        <div className={selected ? 'hidden lg:block' : ''}>{list}</div>
+        {selected ? (
+          <div className="space-y-2">
+            <button type="button" onClick={goTo} className="flex min-h-11 items-center gap-1 text-sm font-bold text-ink hover:underline lg:hidden">
+              <ChevronLeft aria-hidden="true" className="size-4" /> Back to {crumbs[0]}
+            </button>
+            {open}
+          </div>
+        ) : shown.length ? (
+          <Panel className="hidden min-h-64 place-items-center p-5 text-sm text-muted lg:grid">Pick a receipt to see it here.</Panel>
+        ) : null}
+      </div>
     </div>
   )
 }
