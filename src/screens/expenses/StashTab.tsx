@@ -295,7 +295,104 @@ function PartEditor({ store, receiptKey, part, onCancel, onSaved }: { store: Vis
   )
 }
 
-function Sorter({ store, detail, onDone, onEdit }: { store: VistaStore; detail: StashDetail; onDone: (message: string) => void; onEdit: () => void }) {
+type DuplicateOther = { kind: 'booked' | 'stash' | 'manual'; receiptKey: string | null; expenseIds: string[]; vendor: string | null; date: string | null; totalSen: number | null; reasons: string[]; hasScan: boolean }
+
+function PlainImage({ path, label }: { path: string; label: string }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    let made: string | null = null
+    let live = true
+    apiFile(path).then((file) => { if (!live) return; made = URL.createObjectURL(file); setUrl(made) }).catch(() => live && setFailed(true))
+    return () => { live = false; if (made) URL.revokeObjectURL(made) }
+  }, [path])
+  return (
+    <div className="h-[min(34rem,60vh)] overflow-auto border border-line bg-ink/95 p-1">
+      {url ? <img src={url} alt={label} className="w-full bg-white" /> : <p className="p-3 text-xs text-white/70">{failed ? 'The photo could not be loaded.' : 'Loading…'}</p>}
+    </div>
+  )
+}
+
+/**
+ * Two receipts that look like the same one, side by side, and what to do:
+ * drop the new one, let it replace the other, or keep both.
+ */
+function DuplicateReview({ detail, onDone, onClose }: { detail: StashDetail; onDone: (message: string) => void; onClose: () => void }) {
+  const [others, setOthers] = useState<DuplicateOther[] | null>(null)
+  const [pick, setPick] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState('')
+  useEffect(() => {
+    apiRequest<{ others: DuplicateOther[] }>('GET', `/rms/stash/${detail.receiptKey}/duplicates`).then((r) => setOthers(r.others)).catch(() => setOthers([]))
+  }, [detail.receiptKey])
+  const other = others?.[pick]
+  const replaceText = other ? { booked: 'Keep that booking, with this new photo', stash: 'Drop the other photo, keep this one', manual: 'Attach this photo to that expense' }[other.kind] : ''
+  const where = other ? { booked: 'Already in Vista', stash: 'Also in the stash', manual: 'Typed into Vista by hand' }[other.kind] : ''
+
+  async function settle(action: 'cancel' | 'replace' | 'keep') {
+    if (action === 'cancel' && !window.confirm('Drop the new photo? It leaves the stash and the books.')) return
+    setBusy(true)
+    setProblem('')
+    try {
+      await apiRequest('POST', `/rms/stash/${detail.receiptKey}/duplicate`, {
+        action,
+        otherKey: other?.receiptKey ?? null,
+        expenseIds: other?.kind === 'manual' ? other.expenseIds : null,
+      })
+      onDone({ cancel: 'Dropped the new photo.', keep: 'Kept both. It stays in the books as not categorised.', replace: other?.kind === 'booked' ? 'Replaced the photo; the booking stays.' : other?.kind === 'manual' ? 'Attached the photo to that expense.' : 'Replaced: the other photo is gone.' }[action])
+    } catch (reason) {
+      setProblem(reason instanceof Error ? reason.message : 'That could not be done.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-lg font-black">Same receipt twice?</h3>
+        <button type="button" onClick={onClose} className="vista-button-secondary min-h-10 px-3 text-sm">Back</button>
+      </div>
+      {!others ? <p className="text-sm text-muted">Looking for it…</p> : !other ? (
+        <p className="text-sm text-muted">No duplicate found any more. It may have been settled already.</p>
+      ) : (
+        <>
+          {others.length > 1 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {others.map((o, i) => <button key={i} type="button" onClick={() => setPick(i)} className={`min-h-9 border px-3 text-xs font-bold ${pick === i ? 'border-ink bg-ink text-white' : 'border-line bg-white'}`}>{o.receiptKey ?? 'Hand-typed'} · {o.totalSen ? formatRinggit(o.totalSen) : ''}</button>)}
+            </div>
+          ) : null}
+          <p className="text-sm font-bold text-amber-900">Why: {other.reasons.join(', ') || 'they look alike'}.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="mb-1 text-xs font-black uppercase text-muted">New · {detail.receiptKey}</p>
+              <PlainImage path={`/rms/stash/${detail.receiptKey}/scan`} label="The new photo" />
+              <p className="mt-1 text-sm font-bold">{detail.vendor ?? 'Receipt'}</p>
+              <p className="text-xs text-muted">{detail.date ? formatDate(detail.date) : '—'} · {detail.totalSen ? formatRinggit(detail.totalSen) : '—'}</p>
+            </div>
+            <div>
+              <p className="mb-1 text-xs font-black uppercase text-muted">{where}{other.receiptKey ? ` · ${other.receiptKey}` : ''}</p>
+              {other.receiptKey && other.hasScan ? <PlainImage path={`/rms/receipts/${other.receiptKey}/scan`} label="The other receipt" /> : (
+                <div className="grid h-[min(34rem,60vh)] place-items-center border border-dashed border-line bg-canvas p-3 text-center text-sm text-muted">No photo — this one was typed in by hand.</div>
+              )}
+              <p className="mt-1 text-sm font-bold">{other.vendor ?? 'Expense'}</p>
+              <p className="text-xs text-muted">{other.date ? formatDate(other.date) : '—'} · {other.totalSen ? formatRinggit(other.totalSen) : '—'}</p>
+            </div>
+          </div>
+          {problem ? <p role="alert" className="text-sm font-bold text-serious">{problem}</p> : null}
+          <div className="grid gap-2 sm:grid-cols-3">
+            <button type="button" disabled={busy} onClick={() => void settle('cancel')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">✗ Cancel the new one</button>
+            <button type="button" disabled={busy} onClick={() => void settle('replace')} className="vista-button-primary min-h-12 text-sm disabled:opacity-50" title={replaceText}>⇄ Replace</button>
+            <button type="button" disabled={busy} onClick={() => void settle('keep')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">Keep both</button>
+          </div>
+          <p className="text-xs text-muted">Replace: {replaceText.toLowerCase()}.</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore; detail: StashDetail; onDone: (message: string) => void; onEdit: () => void; onReview: () => void }) {
   const foodBrand = store.brands[0]
   const drinksBrand = store.brands[1]
   const withSettlement = store.settings.settlementEnabled && drinksBrand !== undefined
@@ -377,7 +474,12 @@ function Sorter({ store, detail, onDone, onEdit }: { store: VistaStore; detail: 
 
       {detail.problem || detail.warning || detail.duplicate || !detail.ready ? (
         <div className="space-y-1 border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          {detail.duplicate ? <p className="flex gap-2 font-bold"><AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />Looks like a receipt already in Vista. Check Expenses before booking it again.</p> : null}
+          {detail.duplicate ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="flex flex-1 gap-2 font-bold"><AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />Looks like a receipt that is already in Vista or in the stash.</p>
+              <button type="button" onClick={onReview} className="min-h-10 rounded border border-amber-700 bg-white px-3 text-sm font-bold text-amber-900">⚑ Review duplicate</button>
+            </div>
+          ) : null}
           {detail.problem ? <p>{detail.problem}</p> : null}
           {detail.warning ? <p>{detail.warning}</p> : null}
           {!detail.ready && !detail.problem ? <p>Chopper is still checking this one, or its lines don’t add up to the total. Tap Edit to fix the reading.</p> : null}
@@ -539,6 +641,7 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
   const [detail, setDetail] = useState<StashDetail | null>(null)
   const [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   useEffect(() => { if (openKey) { setSelected(openKey); setNotice('') } }, [openKey])
 
   const loadLists = useCallback(async () => {
@@ -560,6 +663,7 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
 
   useEffect(() => {
     setEditing(false)
+    setReviewing(false)
     if (!selected) { setDetail(null); return }
     let live = true
     stashApi.detail(selected).then((d) => live && setDetail(d)).catch(() => live && setDetail(null))
@@ -569,6 +673,7 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
   async function done(message: string) {
     setNotice(message)
     setEditing(false)
+    setReviewing(false)
     await store.reloadBooks()
     await loadLists()
     if (selected) setDetail(await stashApi.detail(selected).catch(() => null))
@@ -616,6 +721,9 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
         {detail ? (
           <Panel className="p-4 sm:p-5">
             {notice ? <p role="status" className="mb-3 flex items-center gap-2 text-sm font-bold text-green-800"><Check aria-hidden="true" className="size-4" />{notice}</p> : null}
+            {reviewing ? (
+              <DuplicateReview detail={detail} onClose={() => setReviewing(false)} onDone={(m) => void done(m)} />
+            ) : (
             <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="lg:sticky lg:top-4 lg:h-[calc(100vh-8rem)]">
                 <ScanViewer key={detail.receiptKey} receiptKey={detail.receiptKey} hasOriginal={detail.hasOriginal} />
@@ -623,9 +731,10 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
               {editing ? (
                 <ReadingEditor detail={detail} onCancel={() => setEditing(false)} onSaved={(m) => void done(m)} />
               ) : (
-                <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} />
+                <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} onReview={() => { setNotice(''); setReviewing(true) }} />
               )}
             </div>
+            )}
           </Panel>
         ) : <Panel className="p-5"><p className="text-sm text-muted">Opening the receipt…</p></Panel>}
       </div>
