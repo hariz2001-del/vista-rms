@@ -47,6 +47,15 @@ export type NewExpense = {
   items?: Array<Omit<ExpenseItem, 'totalSen'>>
 }
 
+/** Money a partner (or the owner) took out for themselves. See `recordDrawing`. */
+export type Drawing = {
+  businessDate: string
+  amountSen: number
+  /** Null for a business without partner settlement: the owner. */
+  partnerId: string | null
+  note: string | null
+}
+
 /** One deliberate correction to the cash balance. See `adjustBalance`. */
 export type BalanceAdjustment = {
   businessDate: string
@@ -328,6 +337,40 @@ export function useDemoStore(_enabled = true) {
    * Naming a shift is optional and only ties the adjustment back to the close
    * that prompted it; that shift is then marked reconciled.
    */
+  /** A withdrawal: one drawing line, against the partner's brand. Changes amend that line. */
+  const drawingLine = useCallback(
+    (input: Drawing) => {
+      const partner = partners.find((p) => p.id === input.partnerId)
+      return {
+        businessDate: input.businessDate,
+        amountSen: input.amountSen,
+        brandId: partner?.brandId ?? null,
+        description: `Withdrawal · ${partner?.name ?? 'Owner'}${input.note ? ` — ${input.note}` : ''}`,
+      }
+    },
+    [partners],
+  )
+  const recordDrawing = useCallback((input: Drawing) => {
+    setLedger((current) => [
+      ...current,
+      {
+        id: current.reduce((max, entry) => Math.max(max, entry.id), 0) + 1,
+        entryAt: new Date().toISOString(),
+        direction: 'MONEY_OUT' as const,
+        category: 'OWNER_DRAWING' as const,
+        orderId: null,
+        shiftId: null,
+        ...drawingLine(input),
+      },
+    ])
+  }, [drawingLine])
+  const updateDrawing = useCallback((id: number, input: Drawing) => {
+    setLedger((current) => current.map((entry) => (entry.id === id && entry.category === 'OWNER_DRAWING' ? { ...entry, ...drawingLine(input) } : entry)))
+  }, [drawingLine])
+  const deleteDrawing = useCallback((id: number) => {
+    setLedger((current) => current.filter((entry) => !(entry.id === id && entry.category === 'OWNER_DRAWING')))
+  }, [])
+
   const adjustBalance = useCallback((input: BalanceAdjustment) => {
     if (input.amountSen <= 0) return
 
@@ -542,6 +585,9 @@ export function useDemoStore(_enabled = true) {
       updateExpense,
       deleteExpense,
       adjustBalance,
+      recordDrawing,
+      updateDrawing,
+      deleteDrawing,
       settleAdvance,
       toggleSoldOut,
       updatePrice,
@@ -580,6 +626,9 @@ export function useDemoStore(_enabled = true) {
       updateExpense,
       deleteExpense,
       adjustBalance,
+      recordDrawing,
+      updateDrawing,
+      deleteDrawing,
       settleAdvance,
       toggleSoldOut,
       updatePrice,

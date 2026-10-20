@@ -17,7 +17,7 @@ import type {
   TerminalStatus,
 } from '../domain/types.ts'
 import { ApiError, apiRequest, SessionExpiredError } from '../lib/http.ts'
-import type { BalanceAdjustment, MenuEdit, NewExpense, VistaStore } from './store.ts'
+import type { Drawing, BalanceAdjustment, MenuEdit, NewExpense, VistaStore } from './store.ts'
 
 /**
  * The real books, read from api-vista.
@@ -248,6 +248,19 @@ export function useApiStore(enabled: boolean): VistaStore {
     [perform],
   )
 
+  const recordDrawing = useCallback(
+    (input: Drawing) => { void perform('The withdrawal', () => apiRequest('POST', '/rms/drawings', input)) },
+    [perform],
+  )
+  const updateDrawing = useCallback(
+    (id: number, input: Drawing) => { void perform('The withdrawal', () => apiRequest('PUT', `/rms/drawings/${id}`, input)) },
+    [perform],
+  )
+  const deleteDrawing = useCallback(
+    (id: number) => { void perform('Removing the withdrawal', () => apiRequest('DELETE', `/rms/drawings/${id}`)) },
+    [perform],
+  )
+
   const adjustBalance = useCallback(
     (input: BalanceAdjustment) => {
       void perform('The adjustment', () => apiRequest('POST', '/rms/ledger/adjustments', input))
@@ -408,6 +421,9 @@ export function useApiStore(enabled: boolean): VistaStore {
       updateExpense,
       deleteExpense,
       adjustBalance,
+      recordDrawing,
+      updateDrawing,
+      deleteDrawing,
       settleAdvance,
       toggleSoldOut,
       updatePrice,
@@ -435,6 +451,9 @@ export function useApiStore(enabled: boolean): VistaStore {
       updateExpense,
       deleteExpense,
       adjustBalance,
+      recordDrawing,
+      updateDrawing,
+      deleteDrawing,
       settleAdvance,
       toggleSoldOut,
       updatePrice,

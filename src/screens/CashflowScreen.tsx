@@ -1,4 +1,4 @@
-import { Scale } from 'lucide-react'
+import { HandCoins, Pencil, Scale, Trash2 } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { DateRangePicker } from '../components/DateRangePicker.tsx'
 import { ExpenseReceipt } from '../components/ExpenseReceipt.tsx'
@@ -16,7 +16,7 @@ const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   OPERATING_EXPENSE: 'Operating expense',
   CAPITAL_INJECTION: 'Capital in',
   CAPITAL_ASSET: 'Equipment',
-  OWNER_DRAWING: 'Partner drawing',
+  OWNER_DRAWING: 'Withdrawal',
   LOAN_PROCEEDS: 'Loan received',
   LOAN_REPAYMENT: 'Loan repaid',
   RECONCILIATION_ADJUSTMENT: 'Reconciliation',
@@ -73,6 +73,8 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
   const [flow, setFlow] = useState<'ALL' | 'IN' | 'OUT'>('ALL')
   const [category, setCategory] = useState<'ALL' | LedgerCategory>('ALL')
   const [adjusting, setAdjusting] = useState(false)
+  /** The withdrawal being recorded (null = new) or changed. */
+  const [withdrawal, setWithdrawal] = useState<{ entry: LedgerEntry | null } | null>(null)
 
   const brandName = (brandId: string | null) =>
     brandId === null ? 'Shared' : (store.brands.find((b) => b.id === brandId)?.name ?? '—')
@@ -149,18 +151,27 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
           <p className="page-kicker">Money movement / cash book</p>
           <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Cashflow</h1>
           <p className="mt-2 max-w-3xl text-sm text-muted">
-            Every ringgit in and out for {formatRange(range)}. History is never edited — a
-            correction is its own entry.
+            Every ringgit in and out for {formatRange(range)}. A correction changes its own line.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setAdjusting(true)}
-          className="vista-button-primary flex min-h-12 items-center gap-2 px-4"
-        >
-          <Scale aria-hidden="true" className="size-4" />
-          Adjust balance
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setWithdrawal({ entry: null })}
+            className="vista-button-secondary flex min-h-12 items-center gap-2 px-4"
+          >
+            <HandCoins aria-hidden="true" className="size-4" />
+            Owner withdrawal
+          </button>
+          <button
+            type="button"
+            onClick={() => setAdjusting(true)}
+            className="vista-button-primary flex min-h-12 items-center gap-2 px-4"
+          >
+            <Scale aria-hidden="true" className="size-4" />
+            Adjust balance
+          </button>
+        </div>
       </div>
 
       <DateRangePicker value={range} onChange={setRange} today={store.today} />
@@ -266,6 +277,12 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
                     {formatDate(row.businessDate)}
                   </td>
                   <td className="py-2 font-semibold text-ink">{row.description}
+                    {row.category === 'OWNER_DRAWING' && row.id > 0 ? (
+                      <span className="ml-2 inline-flex align-middle">
+                        <button type="button" onClick={() => setWithdrawal({ entry: row })} aria-label={`Change ${row.description}`} className="grid size-8 place-items-center text-muted hover:bg-canvas hover:text-ink"><Pencil aria-hidden="true" className="size-3.5" /></button>
+                        <button type="button" onClick={() => { if (window.confirm(`Remove "${row.description}" (${formatRinggit(row.amountSen)})? The money goes back into the balance.`)) store.deleteDrawing(row.id) }} aria-label={`Remove ${row.description}`} className="grid size-8 place-items-center text-muted hover:bg-canvas hover:text-serious"><Trash2 aria-hidden="true" className="size-3.5" /></button>
+                      </span>
+                    ) : null}
                     {row.direction === 'MONEY_OUT' && (row.category === 'OPERATING_EXPENSE' || row.category === 'CAPITAL_ASSET') ? <div className="flex flex-wrap gap-2">{(receiptsByEntry.get(`${row.businessDate}|${row.amountSen}|${row.description}`) ?? []).map((expense) => <ExpenseReceipt key={expense.id} expense={expense} />)}</div> : null}
                   </td>
                   {out ? (
@@ -371,6 +388,8 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
           ) : null}
         </Panel>
       ) : null}
+
+      {withdrawal ? <WithdrawalDialog store={store} entry={withdrawal.entry} onClose={() => setWithdrawal(null)} /> : null}
 
       {adjusting ? (
         <AdjustBalanceDialog
@@ -541,6 +560,76 @@ function AdjustBalanceDialog({
           <button type="submit" disabled={!canSave} className="vista-button-primary min-h-12">
             Write the entry
           </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+/**
+ * Money the owner, or a partner, takes out of the stall for themselves. One
+ * drawing line in the cash book against that partner's brand; settlement takes
+ * it off their payout. Changing it changes that line.
+ */
+function WithdrawalDialog({ store, entry, onClose }: { store: VistaStore; entry: LedgerEntry | null; onClose: () => void }) {
+  const withPartners = store.settings.settlementEnabled && store.partners.length > 0
+  const fromEntry = entry ? store.partners.find((p) => p.brandId === entry.brandId && entry.description.includes(p.name)) ?? null : null
+  const [partnerId, setPartnerId] = useState<string | null>(entry ? (fromEntry?.id ?? null) : withPartners ? (store.partners[0]?.id ?? null) : null)
+  const [amount, setAmount] = useState(entry ? (entry.amountSen / 100).toFixed(2) : '')
+  const [businessDate, setBusinessDate] = useState(entry?.businessDate ?? store.today)
+  const [note, setNote] = useState(() => (entry ? (entry.description.split(' — ')[1] ?? '') : ''))
+  const amountSen = parseRinggitToSen(amount)
+  const canSave = amountSen !== null && amountSen > 0 && Boolean(businessDate)
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    if (!canSave || amountSen === null) return
+    const input = { businessDate, amountSen, partnerId: withPartners ? partnerId : null, note: note.trim() || null }
+    if (entry) store.updateDrawing(entry.id, input)
+    else store.recordDrawing(input)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-5" role="dialog" aria-modal="true" aria-labelledby="withdrawal-title">
+      <form onSubmit={handleSubmit} className="w-full max-w-lg border border-line bg-surface p-6 shadow-2xl">
+        <h2 id="withdrawal-title" className="text-xl font-black">{entry ? 'Change the withdrawal' : 'Owner withdrawal'}</h2>
+        <p className="mt-2 text-sm text-muted">
+          Money taken out of the stall for yourself. It leaves the balance as a drawing
+          {withPartners ? ', and settlement takes it off that partner’s payout.' : '.'}
+        </p>
+        <div className="mt-5 space-y-4">
+          {withPartners ? (
+            <div>
+              <span className="vista-field-label">Who took it</span>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {store.partners.map((p) => (
+                  <button key={p.id} type="button" onClick={() => setPartnerId(p.id)}
+                    className={`min-h-11 border px-4 text-sm font-bold ${partnerId === p.id ? 'border-ink bg-ink text-white' : 'border-line bg-surface text-ink hover:bg-white'}`}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="vista-field-label">Amount (RM)</span>
+              <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" className="vista-control mt-1 w-full px-3" autoFocus />
+            </label>
+            <label className="block">
+              <span className="vista-field-label">Date</span>
+              <input type="date" value={businessDate} max={store.today} onChange={(event) => setBusinessDate(event.target.value)} className="vista-control mt-1 w-full px-3" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="vista-field-label">Note (optional)</span>
+            <input value={note} onChange={(event) => setNote(event.target.value)} maxLength={150} placeholder="e.g. Monthly pay" className="vista-control mt-1 w-full px-3" />
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="vista-button-secondary min-h-11 px-4">Cancel</button>
+          <button type="submit" disabled={!canSave} className="vista-button-primary min-h-11 px-4 disabled:opacity-50">{entry ? 'Save' : 'Record withdrawal'}</button>
         </div>
       </form>
     </div>
