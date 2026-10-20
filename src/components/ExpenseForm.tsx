@@ -1,12 +1,9 @@
 import {
   Check,
-  ClipboardCopy,
-  ClipboardPaste,
   ListPlus,
   Plus,
   ReceiptText,
   Trash2,
-  X,
 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { TimeInput } from './TimeInput.tsx'
@@ -19,12 +16,8 @@ import {
 } from '../domain/expense-items.ts'
 import { splitShared } from '../domain/finance.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
-import {
-  parsePastedExpenses,
-  receiptPrompt,
-  type ChargeTo,
-  type PastedExpense,
-} from '../domain/receipt-paste.ts'
+import type { ChargeTo } from '../domain/receipt-paste.ts'
+import { ChopperParse } from './ChopperParse.tsx'
 import type {
   Brand,
   Expense,
@@ -52,8 +45,6 @@ export const PAYMENT_METHODS: Array<{ value: PaymentMethod; label: string }> = [
 ]
 
 const UNITS = ['kg', 'g', 'ekor', 'pcs', 'papan', 'tray', 'pack', 'botol', 'tin', 'L', 'drum', 'karung', 'ikat', 'tong']
-
-const PASTE_PLACEHOLDER = '=== VISTA EXPENSE ===\nVENDOR: Pasar Borong Selayang\nDATE: 2026-09-27\nAMOUNT: 45.80\n…'
 
 type Row = { key: string; name: string; quantity: string; unit: string; price: string }
 
@@ -214,16 +205,6 @@ export function ExpenseForm({
   const [notes, setNotes] = useState(editing?.notes ?? '')
   const [saved, setSaved] = useState(false)
 
-  // Receipts read by Gemini, pasted back. The first fills the form; the rest
-  // wait their turn and load one by one as each is logged.
-  const [pasteOpen, setPasteOpen] = useState(false)
-  const [pasted, setPasted] = useState('')
-  const [queue, setQueue] = useState<PastedExpense[]>([])
-  const [queueTotal, setQueueTotal] = useState(0)
-  const [filledFrom, setFilledFrom] = useState<PastedExpense | null>(null)
-  const [copied, setCopied] = useState(false)
-  const prompt = receiptPrompt({ foodName, drinksName, withBrands: withSettlement })
-
   // ---- Derived -------------------------------------------------------------
 
   const counted = rows.filter((row) => !isBlank(row))
@@ -245,14 +226,6 @@ export function ExpenseForm({
           ? { foodSen: amountSen, drinksSen: 0 }
           : { foodSen: 0, drinksSen: amountSen }
       : null
-
-  const pastedTotalMismatch =
-    filledFrom !== null &&
-    filledFrom.items.length > 0 &&
-    filledFrom.amountSen !== undefined &&
-    mode === 'ITEMS' &&
-    itemsOk &&
-    itemsSen !== filledFrom.amountSen
 
   // ---- Actions ------------------------------------------------------------
 
@@ -303,68 +276,6 @@ export function ExpenseForm({
     setNotes('')
   }
 
-  function fillFrom(entry: PastedExpense) {
-    reset()
-    setVendor(entry.vendor ?? '')
-    setReceiptNo(entry.receiptNo ?? '')
-    // A future date is a misread; the API would take it, so the form refuses it.
-    setBusinessDate(
-      entry.businessDate && entry.businessDate <= today ? entry.businessDate : today,
-    )
-    setReceiptTime(entry.receiptTime ?? '')
-    setDescription(entry.description ?? '')
-    if (entry.items.length > 0) {
-      setMode('ITEMS')
-      setRows(
-        entry.items.map((item) =>
-          newRow({
-            name: item.name,
-            quantity: formatQuantity(item.quantityMilli),
-            unit: item.unit ?? '',
-            price: (item.unitPriceSen / 100).toFixed(2),
-          }),
-        ),
-      )
-    } else {
-      setAmount(entry.amountSen === undefined ? '' : (entry.amountSen / 100).toFixed(2))
-    }
-    if (entry.category) pickCategory(entry.category)
-    if (entry.paymentMethod) setMethod(entry.paymentMethod)
-    if (entry.chargeTo) setTarget(entry.chargeTo)
-    if (entry.foodSplitPct !== undefined) {
-      setFoodPct(entry.foodSplitPct)
-      setSplitPreset(
-        entry.foodSplitPct === sharedFoodPct
-          ? 'STANDARD'
-          : entry.foodSplitPct === equipmentFoodPct
-            ? 'EQUIPMENT'
-            : 'CUSTOM',
-      )
-    }
-    setFilledFrom(entry)
-  }
-
-  function readPasted(text: string) {
-    setPasted(text)
-    const entries = parsePastedExpenses(text, { food: foodName, drinks: drinksName })
-    const [first, ...rest] = entries
-    setQueueTotal(entries.length)
-    setQueue(rest)
-    if (first) fillFrom(first)
-    else setFilledFrom(null)
-  }
-
-  async function copyPrompt() {
-    try {
-      await navigator.clipboard.writeText(prompt)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
-    } catch {
-      // Clipboard blocked: "See the prompt" shows it for copying by hand.
-      setCopied(false)
-    }
-  }
-
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (!canSave || amountSen === null) return
@@ -406,18 +317,7 @@ export function ExpenseForm({
       return
     }
 
-    const [next, ...rest] = queue
-    if (next) {
-      fillFrom(next)
-      setQueue(rest)
-    } else {
-      reset()
-      setFilledFrom(null)
-      if (queueTotal > 0) {
-        setPasted('')
-        setQueueTotal(0)
-      }
-    }
+    reset()
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2200)
   }
@@ -426,89 +326,8 @@ export function ExpenseForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Fill from Gemini */}
-      {editing ? null : pasteOpen ? (
-        <div className="space-y-3 border border-rail/40 bg-canvas p-3">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-black text-ink">Fill from a receipt</p>
-            <button
-              type="button"
-              onClick={() => setPasteOpen(false)}
-              aria-label="Close receipt paste"
-              className="grid size-8 place-items-center text-muted hover:bg-surface"
-            >
-              <X aria-hidden="true" className="size-4" />
-            </button>
-          </div>
-          <ol className="list-decimal space-y-1 pl-4 text-xs text-muted">
-            <li>Copy the prompt and paste it into Gemini.</li>
-            <li>Attach the receipt photo — several at once is fine — and send.</li>
-            <li>Copy Gemini&rsquo;s whole reply and paste it below. The form fills itself.</li>
-          </ol>
-          <div className="flex flex-wrap gap-2 text-sm font-bold">
-            <button
-              type="button"
-              onClick={() => void copyPrompt()}
-              className="flex min-h-10 items-center gap-2 border border-line bg-surface px-3 text-ink hover:bg-white"
-            >
-              {copied ? (
-                <Check aria-hidden="true" className="size-4" />
-              ) : (
-                <ClipboardCopy aria-hidden="true" className="size-4" />
-              )}
-              {copied ? 'Prompt copied' : 'Copy the prompt'}
-            </button>
-          </div>
-          <details className="text-xs text-muted">
-            <summary className="cursor-pointer font-bold">See the prompt</summary>
-            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap border border-line bg-surface p-2 text-[0.7rem] leading-relaxed">
-              {prompt}
-            </pre>
-          </details>
-          <label className="block">
-            <span className="vista-field-label">Gemini&rsquo;s reply</span>
-            <textarea
-              value={pasted}
-              onChange={(event) => readPasted(event.target.value)}
-              rows={5}
-              placeholder={PASTE_PLACEHOLDER}
-              className="mt-1 w-full border-2 border-line bg-surface p-2 font-mono text-xs outline-none focus:border-rail"
-            />
-          </label>
-          {pasted.trim() !== '' && queueTotal === 0 ? (
-            <p role="alert" className="text-xs font-bold text-serious">
-              No receipt found in that text. Paste Gemini&rsquo;s whole reply, including the ===
-              VISTA EXPENSE === lines.
-            </p>
-          ) : null}
-          {filledFrom ? (
-            <div role="status" className="space-y-1 text-xs">
-              <p className="font-bold text-good">
-                {queueTotal > 1
-                  ? `Receipt ${queueTotal - queue.length} of ${queueTotal} filled in. Check it and log it; the next one loads after.`
-                  : 'Filled in. Check the form below, then log it.'}
-              </p>
-              {filledFrom.amountSen === undefined && filledFrom.items.length === 0 ? (
-                <p className="font-bold text-serious">No amount was read — type it in.</p>
-              ) : null}
-              {filledFrom.problems.map((problem) => (
-                <p key={problem} className="text-serious">
-                  {problem}.
-                </p>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setPasteOpen(true)}
-          className="flex min-h-12 w-full items-center justify-center gap-2 border border-dashed border-slate-400 hover:bg-canvas"
-        >
-          <ClipboardPaste aria-hidden="true" className="size-4" />
-          <span className="text-sm font-bold text-ink">Fill from a receipt (Gemini)</span>
-        </button>
-      )}
+      {/* Receipts read by Chopper, straight into the books */}
+      {editing ? null : <ChopperParse />}
 
       {/* Receipt */}
       <Section title="Receipt">
@@ -690,12 +509,6 @@ export function ExpenseForm({
             {!itemsOk && counted.length > 0 ? (
               <p className="text-xs font-bold text-serious">
                 Every line needs a name, a quantity and a price.
-              </p>
-            ) : null}
-            {pastedTotalMismatch && filledFrom?.amountSen !== undefined ? (
-              <p role="alert" className="text-xs font-bold text-serious">
-                The lines add up to {formatRinggit(itemsSen)}, but the receipt total read was{' '}
-                {formatRinggit(filledFrom.amountSen)}. Check the lines against the receipt.
               </p>
             ) : null}
           </div>

@@ -189,7 +189,16 @@ export function AppShell({
         <main className="flex-1 p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-7 sm:pb-28 lg:px-10 lg:py-8 xl:px-12">{children}</main>
 
         {/* Chopper, the receipt bot, to chat with from any screen. Live accounts only. */}
-        {isDemo ? null : <ChopperChat />}
+        {isDemo ? null : (
+          <ChopperChat
+            onOpenReceipt={(key) => {
+              // The Expenses screen opens this receipt in its Stash tab.
+              try { sessionStorage.setItem('vista.openReceipt', key) } catch { /* private window */ }
+              window.dispatchEvent(new CustomEvent('vista:open-receipt', { detail: key }))
+              go('expenses')
+            }}
+          />
+        )}
 
         {/* Mobile tab bar — the owner reads this on a phone as often as a laptop. */}
         {moreOpen ? (

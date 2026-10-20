@@ -76,6 +76,20 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
   }
 
   const [tab, setTab] = useState<'log' | 'stash'>('log')
+  // A receipt opened from Chopper's chat: shown in the Stash tab.
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  useEffect(() => {
+    const take = (key: string | null) => {
+      if (!key) return
+      try { sessionStorage.removeItem('vista.openReceipt') } catch { /* private window */ }
+      setTab('stash')
+      setOpenKey(key)
+    }
+    try { take(sessionStorage.getItem('vista.openReceipt')) } catch { /* private window */ }
+    const onOpen = (event: Event) => take((event as CustomEvent<string>).detail)
+    window.addEventListener('vista:open-receipt', onOpen)
+    return () => window.removeEventListener('vista:open-receipt', onOpen)
+  }, [])
   const [stashCount, setStashCount] = useState(0)
   const notCategorised = store.expenses.filter((expense) => expense.uncategorised).length
   useEffect(() => {
@@ -115,7 +129,7 @@ export function ExpensesScreen({ store }: { store: VistaStore }) {
         </div>
       )}
 
-      {tab === 'stash' && !IS_DEMO ? <StashTab store={store} onCount={setStashCount} /> : null}
+      {tab === 'stash' && !IS_DEMO ? <StashTab store={store} onCount={setStashCount} openKey={openKey} /> : null}
 
       {tab === 'log' && withSettlement ? <OwedToPartners store={store} /> : null}
 

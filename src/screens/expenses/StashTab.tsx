@@ -531,7 +531,7 @@ function FileCard({ receipt, sorted, onOpen }: { receipt: StashSummary; sorted: 
  * Sorted (already in the books), newest first. Opening one shows its scan
  * beside its lines, to sort, correct or change.
  */
-export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: number) => void }) {
+export function StashTab({ store, onCount, openKey = null }: { store: VistaStore; onCount: (n: number) => void; openKey?: string | null }) {
   const [area, setArea] = useState<'stashed' | 'sorted'>('stashed')
   const [lists, setLists] = useState<{ stashed: StashSummary[] | null; sorted: StashSummary[] | null }>({ stashed: null, sorted: null })
   const [error, setError] = useState('')
@@ -539,6 +539,7 @@ export function StashTab({ store, onCount }: { store: VistaStore; onCount: (n: n
   const [detail, setDetail] = useState<StashDetail | null>(null)
   const [notice, setNotice] = useState('')
   const [editing, setEditing] = useState(false)
+  useEffect(() => { if (openKey) { setSelected(openKey); setNotice('') } }, [openKey])
 
   const loadLists = useCallback(async () => {
     try {
