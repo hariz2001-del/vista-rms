@@ -43,6 +43,8 @@ type StashDetail = StashSummary & {
   sorted: boolean
   guess: { category: ExpenseCategory; brandId: string | null; source: string } | null
   hasOriginal: boolean
+  /** Flagged as a duplicate, then registered as a receipt of its own. */
+  keptApart?: boolean
 }
 
 export const stashApi = {
@@ -313,92 +315,162 @@ function PlainImage({ path, label }: { path: string; label: string }) {
   )
 }
 
+/** One photo in a group of copies of the same receipt. */
+type Copy = { key: string; kind: 'stash' | 'booked'; vendor: string | null; date: string | null; totalSen: number | null; reasons: string[]; hasScan: boolean }
+
 /**
- * Two receipts that look like the same one, side by side, and what to do:
- * drop the new one, let it replace the other, or keep both.
+ * Every copy of what looks like one receipt, side by side. Delete the ones you
+ * don't want and keep one; a group counts once in the books until you say a
+ * copy is a receipt of its own. Hand-keyed expenses that match can be linked.
  */
 function DuplicateReview({ detail, onDone, onClose }: { detail: StashDetail; onDone: (message: string) => void; onClose: () => void }) {
+  // The review is seen from one stashed copy; it moves on to another when that one goes.
+  const [anchor, setAnchor] = useState<Copy>({ key: detail.receiptKey, kind: 'stash', vendor: detail.vendor, date: detail.date, totalSen: detail.totalSen, reasons: [], hasScan: true })
   const [others, setOthers] = useState<DuplicateOther[] | null>(null)
-  const [pick, setPick] = useState(0)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
-  useEffect(() => {
-    apiRequest<{ others: DuplicateOther[] }>('GET', `/rms/stash/${detail.receiptKey}/duplicates`).then((r) => setOthers(r.others)).catch(() => setOthers([]))
-  }, [detail.receiptKey])
-  const other = others?.[pick]
-  const replaceText = other ? { booked: 'Keep that booking, with this new photo', stash: 'Drop the other photo, keep this one', manual: 'Attach this photo to that expense' }[other.kind] : ''
-  const where = other ? { booked: 'Already in Vista', stash: 'Also in the stash', manual: 'Typed into Vista by hand' }[other.kind] : ''
+  const [said, setSaid] = useState<string[]>([])
 
-  async function settle(action: 'cancel' | 'replace' | 'keep') {
-    if (action === 'cancel' && !window.confirm('Drop the new photo? It leaves the stash and the books.')) return
+  useEffect(() => {
+    let live = true
+    setOthers(null)
+    apiRequest<{ others: DuplicateOther[] }>('GET', `/rms/stash/${anchor.key}/duplicates`).then((r) => live && setOthers(r.others)).catch(() => live && setOthers([]))
+    return () => { live = false }
+  }, [anchor.key])
+
+  const copies: Copy[] = others ? [anchor, ...others.filter((o) => o.kind !== 'manual' && o.receiptKey).map((o) => ({ key: o.receiptKey!, kind: o.kind as Copy['kind'], vendor: o.vendor, date: o.date, totalSen: o.totalSen, reasons: o.reasons, hasScan: o.hasScan }))] : []
+  const manual = (others ?? []).filter((o) => o.kind === 'manual')
+  const stashCopies = copies.filter((c) => c.kind === 'stash')
+
+  const settle = (key: string, body: object) => apiRequest('POST', `/rms/stash/${key}/duplicate`, body)
+
+  /** After a change: carry on from a copy that is left, or finish when one copy (or none to decide) remains. */
+  async function carryOn(left: Copy[], note: string) {
+    const notes = [...said, note]
+    const stash = left.filter((c) => c.kind === 'stash')
+    if (left.length <= 1 || !stash.length) {
+      // One copy left in the stash: it is the transaction, so it goes into the books.
+      if (left.length === 1 && stash.length === 1) {
+        await settle(stash[0]!.key, { action: 'keep' })
+        notes.push(`${stash[0]!.key} is the one kept.`)
+      }
+      onDone(notes.join(' '))
+      return
+    }
+    setSaid(notes)
+    const next = stash.find((c) => c.key === anchor.key) ?? stash[0]!
+    if (next.key === anchor.key) {
+      const fresh = await apiRequest<{ others: DuplicateOther[] }>('GET', `/rms/stash/${anchor.key}/duplicates`)
+      setOthers(fresh.others)
+    } else setAnchor(next)
+  }
+
+  async function run(action: () => Promise<void>) {
     setBusy(true)
     setProblem('')
-    try {
-      await apiRequest('POST', `/rms/stash/${detail.receiptKey}/duplicate`, {
-        action,
-        otherKey: other?.receiptKey ?? null,
-        expenseIds: other?.kind === 'manual' ? other.expenseIds : null,
-      })
-      onDone({ cancel: 'Dropped the new photo.', keep: other?.kind === 'manual' ? 'Kept apart. It stays in the books as not categorised.' : 'Kept both. It stays in the books as not categorised.', replace: other?.kind === 'booked' ? 'Replaced the photo; the booking stays.' : other?.kind === 'manual' ? 'Linked: that expense now has this receipt.' : 'Replaced: the other photo is gone.' }[action])
-    } catch (reason) {
+    try { await action() } catch (reason) {
       setProblem(reason instanceof Error ? reason.message : 'That could not be done.')
-    } finally {
-      setBusy(false)
-    }
+    } finally { setBusy(false) }
   }
+
+  const remove = (copy: Copy) => run(async () => {
+    if (copy.kind === 'stash') {
+      if (!window.confirm(`Delete ${copy.key}? This photo leaves the stash and the books.`)) return
+      await settle(copy.key, { action: 'cancel' })
+      await carryOn(copies.filter((c) => c.key !== copy.key), `Deleted ${copy.key}.`)
+    } else {
+      // A booked copy keeps its booking; the stashed photo takes its place.
+      const keeper = stashCopies[0]!
+      if (!window.confirm(`Delete the photo of ${copy.key}? Its booking stays, with the photo of ${keeper.key}.`)) return
+      await settle(keeper.key, { action: 'replace', otherKey: copy.key })
+      onDone(`Deleted the photo of ${copy.key}; its booking now has ${keeper.key}’s photo.${stashCopies.length > 1 ? ' Other copies are still in the stash.' : ''}`)
+    }
+  })
+
+  const keepApart = (copy: Copy) => run(async () => {
+    await settle(copy.key, { action: 'keep' })
+    await carryOn(copies.filter((c) => c.key !== copy.key), `${copy.key} is registered as a receipt of its own.`)
+  })
+
+  const keepAll = () => run(async () => {
+    for (const copy of stashCopies) await settle(copy.key, { action: 'keep' })
+    onDone(`Kept all ${copies.length}: each one is a receipt of its own.`)
+  })
+
+  const link = (other: DuplicateOther) => run(async () => {
+    await settle(anchor.key, { action: 'replace', expenseIds: other.expenseIds })
+    onDone(`Linked: the expense you keyed in now has ${anchor.key} as its receipt.`)
+  })
+
+  const where = (c: Copy) => (c.kind === 'booked' ? 'In Vista, sorted' : c.key === detail.receiptKey ? 'This one' : 'In the stash')
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-lg font-black">{other?.kind === 'manual' ? 'The receipt for an expense you keyed in?' : 'Same receipt twice?'}</h3>
-        <button type="button" onClick={onClose} className="vista-button-secondary min-h-10 px-3 text-sm">Back</button>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-lg font-black">{others && copies.length > 1 ? `Same receipt — ${copies.length} copies` : manual.length ? 'The receipt for an expense you keyed in?' : 'Same receipt?'}</h3>
+          <p className="text-sm text-muted">Delete the copies you don’t want and keep one. Together they count as one transaction until you say a copy is a receipt of its own.</p>
+        </div>
+        <button type="button" onClick={onClose} className="vista-button-secondary min-h-10 shrink-0 px-3 text-sm">Back</button>
       </div>
-      {!others ? <p className="text-sm text-muted">Looking for it…</p> : !other ? (
-        <p className="text-sm text-muted">No duplicate found any more. It may have been settled already.</p>
+      {said.length ? <p role="status" className="text-sm font-bold text-green-800">{said.join(' ')}</p> : null}
+      {!others ? <p className="text-sm text-muted">Looking for the copies…</p> : copies.length < 2 && !manual.length ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">No other copy found any more. It may have been settled already.</p>
+          <button type="button" disabled={busy} onClick={() => void keepApart(anchor)} className="vista-button-primary min-h-11 px-4 text-sm disabled:opacity-50">Register as a receipt of its own</button>
+        </div>
       ) : (
         <>
-          {others.length > 1 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {others.map((o, i) => <button key={i} type="button" onClick={() => setPick(i)} className={`min-h-9 border px-3 text-xs font-bold ${pick === i ? 'border-ink bg-ink text-white' : 'border-line bg-white'}`}>{o.receiptKey ?? 'Hand-typed'} · {o.totalSen ? formatRinggit(o.totalSen) : ''}</button>)}
+          {copies.length > 1 ? (
+            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+              {copies.map((c) => (
+                <div key={c.key} className={`flex flex-col border p-2 ${c.key === detail.receiptKey ? 'border-ink' : 'border-line'}`}>
+                  <p className="mb-1 flex items-center justify-between gap-2 text-xs font-black uppercase text-muted">
+                    <span>{where(c)} · {c.key}</span>
+                    {c.kind === 'booked' ? <Badge tone="good">Booked</Badge> : null}
+                  </p>
+                  {c.hasScan ? <PlainImage path={c.kind === 'stash' ? `/rms/stash/${c.key}/scan` : `/rms/receipts/${c.key}/scan`} label={`Copy ${c.key}`} /> : (
+                    <div className="grid h-[22rem] place-items-center border border-dashed border-line bg-canvas text-sm text-muted">No photo</div>
+                  )}
+                  <p className="mt-1 text-sm font-bold">{c.vendor ?? 'Receipt'}</p>
+                  <p className="text-xs text-muted">{c.date ? formatDate(c.date) : '—'} · {c.totalSen ? formatRinggit(c.totalSen) : '—'}</p>
+                  {c.reasons.length ? <p className="text-xs font-semibold text-amber-900">Why: {c.reasons.join(', ')}</p> : null}
+                  <div className="mt-2 grid gap-1.5">
+                    <button type="button" disabled={busy || copies.length < 2 || (c.kind === 'booked' && !stashCopies.length)} onClick={() => void remove(c)}
+                      className="min-h-10 border border-serious bg-white px-3 text-sm font-bold text-serious hover:bg-red-50 disabled:opacity-40">🗑 Delete{c.kind === 'booked' ? ' this photo' : ''}</button>
+                    {c.kind === 'stash' ? (
+                      <button type="button" disabled={busy} onClick={() => void keepApart(c)} className="vista-button-secondary min-h-10 text-sm disabled:opacity-50">Not a duplicate — register as new</button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : null}
-          <p className="text-sm font-bold text-amber-900">Why: {other.reasons.join(', ') || 'they look alike'}.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <p className="mb-1 text-xs font-black uppercase text-muted">New · {detail.receiptKey}</p>
-              <PlainImage path={`/rms/stash/${detail.receiptKey}/scan`} label="The new photo" />
-              <p className="mt-1 text-sm font-bold">{detail.vendor ?? 'Receipt'}</p>
-              <p className="text-xs text-muted">{detail.date ? formatDate(detail.date) : '—'} · {detail.totalSen ? formatRinggit(detail.totalSen) : '—'}</p>
+
+          {manual.length ? (
+            <div className="space-y-2">
+              <p className="text-xs font-black uppercase text-muted">Keyed in by hand, with no receipt</p>
+              {manual.map((o) => (
+                <div key={o.expenseIds.join()} className="flex flex-wrap items-center gap-3 border border-line p-3 text-sm">
+                  <span className="min-w-0 flex-1">
+                    <span className="font-bold">{o.vendor ?? 'Expense'}</span> · {o.date ? formatDate(o.date) : '—'} · {o.totalSen ? formatRinggit(o.totalSen) : '—'}
+                    <span className="block text-xs text-amber-900">Why: {o.reasons.join(', ')}</span>
+                  </span>
+                  <button type="button" disabled={busy} onClick={() => void link(o)} className="vista-button-primary min-h-10 px-3 text-sm disabled:opacity-50">🔗 Link {anchor.key} to it</button>
+                </div>
+              ))}
+              <p className="text-xs text-muted">Link: the expense keeps its brand and category and gets this receipt. Nothing is booked twice.</p>
             </div>
-            <div>
-              <p className="mb-1 text-xs font-black uppercase text-muted">{where}{other.receiptKey ? ` · ${other.receiptKey}` : ''}</p>
-              {other.receiptKey && other.hasScan ? <PlainImage path={`/rms/receipts/${other.receiptKey}/scan`} label="The other receipt" /> : (
-                <div className="grid h-[min(34rem,60vh)] place-items-center border border-dashed border-line bg-canvas p-3 text-center text-sm text-muted">No photo — this one was typed in by hand.</div>
-              )}
-              <p className="mt-1 text-sm font-bold">{other.vendor ?? 'Expense'}</p>
-              <p className="text-xs text-muted">{other.date ? formatDate(other.date) : '—'} · {other.totalSen ? formatRinggit(other.totalSen) : '—'}</p>
-            </div>
-          </div>
+          ) : null}
+
           {problem ? <p role="alert" className="text-sm font-bold text-serious">{problem}</p> : null}
-          {other.kind === 'manual' ? (
-            <>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <button type="button" disabled={busy} onClick={() => void settle('replace')} className="vista-button-primary min-h-12 text-sm disabled:opacity-50">🔗 Link to it</button>
-                <button type="button" disabled={busy} onClick={() => void settle('keep')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">It’s a different one</button>
-                <button type="button" disabled={busy} onClick={() => void settle('cancel')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">✗ Drop the photo</button>
-              </div>
-              <p className="text-xs text-muted">Link: the expense you keyed in keeps its brand and category, and gets this receipt. Nothing is booked twice.</p>
-            </>
-          ) : (
-            <>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <button type="button" disabled={busy} onClick={() => void settle('cancel')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">✗ Cancel the new one</button>
-                <button type="button" disabled={busy} onClick={() => void settle('replace')} className="vista-button-primary min-h-12 text-sm disabled:opacity-50" title={replaceText}>⇄ Replace</button>
-                <button type="button" disabled={busy} onClick={() => void settle('keep')} className="vista-button-secondary min-h-12 text-sm disabled:opacity-50">Keep both</button>
-              </div>
-              <p className="text-xs text-muted">Replace: {replaceText.toLowerCase()}.</p>
-            </>
-          )}
+          <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+            {copies.length > 1 ? (
+              <button type="button" disabled={busy} onClick={() => void keepAll()} className="vista-button-secondary min-h-11 px-4 text-sm disabled:opacity-50">Keep all ({copies.length}) — they’re different receipts</button>
+            ) : (
+              <button type="button" disabled={busy} onClick={() => void keepApart(anchor)} className="vista-button-secondary min-h-11 px-4 text-sm disabled:opacity-50">It’s a different one — register as new</button>
+            )}
+          </div>
         </>
       )}
     </div>
@@ -457,7 +529,7 @@ function ChoiceFields({ store, value, onChange }: { store: VistaStore; value: Ch
 
 const PART_TONES = ['bg-ink text-white', 'bg-sky-700 text-white', 'bg-amber-600 text-white', 'bg-emerald-700 text-white', 'bg-fuchsia-700 text-white']
 
-function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore; detail: StashDetail; onDone: (message: string) => void; onEdit: () => void; onReview: () => void }) {
+function Sorter({ store, detail, onDone, onEdit, onReview, onUndoKeep }: { store: VistaStore; detail: StashDetail; onDone: (message: string) => void; onEdit: () => void; onReview: () => void; onUndoKeep: () => void }) {
   const foodBrand = store.brands[0]
   const withSettlement = store.settings.settlementEnabled && store.brands[1] !== undefined
   const pending = detail.lines.filter((line) => line.decision === 'pending')
@@ -566,6 +638,13 @@ function Sorter({ store, detail, onDone, onEdit, onReview }: { store: VistaStore
           </button>
         ) : null}
       </div>
+
+      {detail.keptApart && pending.length === detail.lines.length ? (
+        <div className="flex flex-wrap items-center gap-2 border-l-4 border-sky-600 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+          <p className="flex-1 font-semibold">Registered as a receipt of its own — not a duplicate.</p>
+          <button type="button" onClick={onUndoKeep} className="min-h-10 rounded border border-sky-700 bg-white px-3 text-sm font-bold">↺ It’s a duplicate after all</button>
+        </div>
+      ) : null}
 
       {detail.problem || detail.warning || detail.duplicate || !detail.ready ? (
         <div className="space-y-1 border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -784,6 +863,17 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
     if (selected) setDetail(await stashApi.detail(selected).catch(() => null))
   }
 
+  /** "Not a duplicate" taken back: out of the books again, and straight into the review. */
+  async function undoKeep(key: string) {
+    try {
+      await apiRequest('POST', `/rms/stash/${key}/duplicate`, { action: 'undo' })
+      await done('Back to the duplicate review: it is out of the books again until you decide.')
+      setReviewing(true)
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : 'That could not be undone.')
+    }
+  }
+
   const sorted = useMemo(() => (lists.sorted ?? []).toSorted((a, b) => (b.date ?? '').localeCompare(a.date ?? '')), [lists.sorted])
   const crumbs = [area === 'stashed' ? 'Stashed' : 'Sorted']
   const goTo = () => { setSelected(null); setNotice('') }
@@ -841,7 +931,7 @@ export function StashTab({ store, onCount, openKey = null }: { store: VistaStore
             {editing ? (
               <ReadingEditor detail={detail} onCancel={() => setEditing(false)} onSaved={(m) => void done(m)} />
             ) : (
-              <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} onReview={() => { setNotice(''); setReviewing(true) }} />
+              <Sorter key={`${detail.receiptKey}:${detail.lines.map((l) => `${l.decision}${l.amountSen}`).join()}`} store={store} detail={detail} onDone={(m) => void done(m)} onEdit={() => { setNotice(''); setEditing(true) }} onReview={() => { setNotice(''); setReviewing(true) }} onUndoKeep={() => void undoKeep(detail.receiptKey)} />
             )}
           </div>
         )}
