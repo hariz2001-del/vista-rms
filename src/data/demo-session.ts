@@ -78,21 +78,24 @@ async function run<T>(mode: IDBTransactionMode, op: (store: IDBObjectStore) => I
   }
 }
 
-/** The visitor's saved demo, if it belongs to the current window; otherwise null. */
-export async function loadDemoState<T>(now = new Date()): Promise<T | null> {
+/**
+ * The visitor's saved demo, if it belongs to the current window; otherwise
+ * null. `key` keeps separate parts apart (the books, the Team records).
+ */
+export async function loadDemoState<T>(now = new Date(), key = KEY): Promise<T | null> {
   try {
-    const saved = await run<Saved<T> | undefined>('readonly', (store) => store.get(KEY))
+    const saved = await run<Saved<T> | undefined>('readonly', (store) => store.get(key))
     if (saved && saved.window === demoWindow(now)) return saved.state
-    if (saved) await run('readwrite', (store) => store.delete(KEY))
+    if (saved) await run('readwrite', (store) => store.delete(key))
   } catch {
     // Private mode or blocked storage: the demo simply starts fresh each load.
   }
   return null
 }
 
-export async function saveDemoState<T>(state: T, now = new Date()): Promise<void> {
+export async function saveDemoState<T>(state: T, now = new Date(), key = KEY): Promise<void> {
   try {
-    await run('readwrite', (store) => store.put({ window: demoWindow(now), state } satisfies Saved<T>, KEY))
+    await run('readwrite', (store) => store.put({ window: demoWindow(now), state } satisfies Saved<T>, key))
   } catch {
     // Losing the save only costs the visitor their demo edits on reload.
   }

@@ -1,8 +1,6 @@
 import { Eye } from 'lucide-react'
 import { useState } from 'react'
-import { EmptyState } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
-import { IS_DEMO } from '../lib/mode.ts'
 import { StockCountsTab } from './stock/StockCountsTab.tsx'
 import { StockListTab } from './stock/StockListTab.tsx'
 import { StockPosPreview } from './stock/StockPosPreview.tsx'
@@ -32,16 +30,14 @@ export function StockScreen({ store }: { store: VistaStore }) {
             <p className="page-kicker">Closing / store room</p>
             <h1 className="mt-1 text-3xl sm:text-[2.65rem]">Stock</h1>
           </div>
-          {IS_DEMO ? null : (
-            <button
-              type="button"
-              onClick={() => setPosView(true)}
-              className="vista-button-secondary ml-auto flex min-h-11 items-center gap-2"
-              title="See the stock count exactly as the counter shows it"
-            >
-              <Eye aria-hidden="true" className="size-4" /> POS view
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setPosView(true)}
+            className="vista-button-secondary ml-auto flex min-h-11 items-center gap-2"
+            title="See the stock count exactly as the counter shows it"
+          >
+            <Eye aria-hidden="true" className="size-4" /> POS view
+          </button>
         </div>
         <p className="mt-2 max-w-3xl text-sm text-muted">
           A quick closing count from the counter, so tomorrow&rsquo;s restock is planned from what is actually
@@ -49,39 +45,30 @@ export function StockScreen({ store }: { store: VistaStore }) {
         </p>
       </div>
 
-      {IS_DEMO ? (
-        <EmptyState
-          title="Stock works with a live business account"
-          hint="Sign up at vistahub.my to set up a closing stock list for your counter."
+      <div role="tablist" aria-label="Stock sections" className="flex gap-1 border-b border-line">
+        {TABS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.key}
+            onClick={() => setTab(item.key)}
+            className={`-mb-px min-h-11 shrink-0 border-b-2 px-3 text-sm font-bold ${
+              tab === item.key ? 'border-rail text-ink' : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'counts' ? <StockCountsTab today={store.today} /> : null}
+      {tab === 'list' ? (
+        <StockListTab
+          brands={store.brands}
+          menuCategories={store.categories}
         />
-      ) : (
-        <>
-          <div role="tablist" aria-label="Stock sections" className="flex gap-1 border-b border-line">
-            {TABS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                role="tab"
-                aria-selected={tab === item.key}
-                onClick={() => setTab(item.key)}
-                className={`-mb-px min-h-11 shrink-0 border-b-2 px-3 text-sm font-bold ${
-                  tab === item.key ? 'border-rail text-ink' : 'border-transparent text-muted hover:text-ink'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-          {tab === 'counts' ? <StockCountsTab today={store.today} /> : null}
-          {tab === 'list' ? (
-            <StockListTab
-              brands={store.brands}
-              menuCategories={store.categories}
-            />
-          ) : null}
-          {posView ? <StockPosPreview brands={store.brands} onClose={() => setPosView(false)} /> : null}
-        </>
-      )}
+      ) : null}
+      {posView ? <StockPosPreview brands={store.brands} onClose={() => setPosView(false)} /> : null}
     </div>
   )
 }

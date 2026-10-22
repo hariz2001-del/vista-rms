@@ -84,9 +84,9 @@ export function SignInScreen({ onSignIn, showDemoHint, initialError = null }: Pr
         </button>
 
         <p className="mt-5 text-center text-sm text-muted">
-          New business?{' '}
+          Want Vista for your business?{' '}
           <a href={HUB_URL} className="font-bold text-ink underline">
-            Register at {new URL(HUB_URL).host}
+            Get in touch at {new URL(HUB_URL).host}
           </a>
         </p>
 

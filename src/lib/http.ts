@@ -1,3 +1,5 @@
+import { IS_DEMO } from './mode.ts'
+
 /**
  * The one way the RMS talks to api-vista.
  *
@@ -74,11 +76,23 @@ export function onSessionExpired(listener: () => void): () => void {
 
 type ErrorBody = { error?: string; message?: string }
 
+/** In the demo, Team and Stock are answered in the browser (src/data/fake/demo-server.ts). */
+function servedByDemo(path: string): boolean {
+  return IS_DEMO && (path.startsWith('/rms/team/') || path.startsWith('/rms/stock/'))
+}
+
 export async function apiRequest<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {
+  if (servedByDemo(path)) {
+    const { demoRequest } = await import('../data/fake/demo-server.ts')
+    const result = await demoRequest<T>(method, path, body)
+    if (method !== 'GET' && path.startsWith('/rms/team')) window.dispatchEvent(new Event(TEAM_CHANGED))
+    return result
+  }
+
   const token = readToken()
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -127,6 +141,10 @@ export async function apiRequest<T>(
  * the RMS and Sarang AI hand out the same file.
  */
 export async function apiFile(path: string): Promise<File> {
+  if (servedByDemo(path)) {
+    const { demoFile } = await import('../data/fake/demo-server.ts')
+    return demoFile(path)
+  }
   const token = readToken()
   let response: Response
   try {

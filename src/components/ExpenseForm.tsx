@@ -18,6 +18,7 @@ import { splitShared } from '../domain/finance.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import type { ChargeTo } from '../domain/receipt-paste.ts'
 import { ChopperParse } from './ChopperParse.tsx'
+import { IS_DEMO } from '../lib/mode.ts'
 import type {
   Brand,
   Expense,
@@ -327,7 +328,7 @@ export function ExpenseForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Receipts read by Chopper, straight into the books */}
-      {editing ? null : <ChopperParse />}
+      {editing || IS_DEMO ? null : <ChopperParse />}
 
       {/* Receipt */}
       <Section title="Receipt">

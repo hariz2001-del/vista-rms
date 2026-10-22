@@ -11,6 +11,7 @@ import {
   type PayrollRow,
 } from '../../data/roster-api.ts'
 import { errorText, useLoad } from '../../data/team-api.ts'
+import { IS_DEMO } from '../../lib/mode.ts'
 import { formatRinggit, formatSignedRinggit } from '../../domain/money.ts'
 
 const STATUS: Record<PayrollRow['status'], { text: string; tone: 'neutral' | 'good' | 'warning' | 'info' }> = {
@@ -161,7 +162,7 @@ function Payslip({ staffId, period, onChanged }: { staffId: string; period: { st
         ) : null}
         {data.status === 'PAID' ? (
           <p className="text-sm text-muted">
-            Paid {data.paidOn ? dayName(data.paidOn) : ''} · booked in Cashflow as Staff wages. This payslip can no longer change; later
+            Paid {data.paidOn ? dayName(data.paidOn) : ''} · {IS_DEMO ? 'in a live business this is booked in Cashflow as Staff wages (not in the demo).' : 'booked in Cashflow as Staff wages.'} This payslip can no longer change; later
             corrections appear as adjustments.
             {data.paidAt ? ` (${dateTimeText(data.paidAt)})` : ''}
           </p>

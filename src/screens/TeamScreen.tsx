@@ -1,6 +1,6 @@
 import { Smartphone } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { EmptyState, SectionHeading } from '../components/primitives.tsx'
+import { SectionHeading } from '../components/primitives.tsx'
 import { IS_DEMO } from '../lib/mode.ts'
 import { AttendanceTab } from './team/AttendanceTab.tsx'
 import { PayrollTab } from './team/PayrollTab.tsx'
@@ -50,6 +50,7 @@ export function TeamScreen() {
           title="Team"
           hint="Staff sign in at team.vistahub.my with their 4-digit PIN to apply for shifts and see their roster and pay."
         />
+        {/* The staff app runs on its own server, so the demo has no preview of it. */}
         {IS_DEMO ? null : (
           <button
             type="button"
@@ -63,55 +64,46 @@ export function TeamScreen() {
       </div>
       {viewing ? <TeamView onClose={() => setViewing(false)} /> : null}
 
-      {IS_DEMO ? (
-        <EmptyState
-          title="Team works with a live business account"
-          hint="Sign up at vistahub.my to add staff, build rosters and run payroll."
-        />
-      ) : (
-        <>
-          <div role="tablist" aria-label="Team sections" className="-mx-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 sm:mx-0 sm:flex-wrap sm:px-0">
-            {TABS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                role="tab"
-                aria-selected={tab === item.key}
-                onClick={() => setTab(item.key)}
-                className={`-mb-px min-h-11 shrink-0 border-b-2 px-3 text-sm font-bold ${
-                  tab === item.key ? 'border-rail text-ink' : 'border-transparent text-muted hover:text-ink'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+      <div role="tablist" aria-label="Team sections" className="-mx-4 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 sm:mx-0 sm:flex-wrap sm:px-0">
+        {TABS.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.key}
+            onClick={() => setTab(item.key)}
+            className={`-mb-px min-h-11 shrink-0 border-b-2 px-3 text-sm font-bold ${
+              tab === item.key ? 'border-rail text-ink' : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
-          <GettingStarted key={`${tab}:${version}`} current={tab} onGo={setTab} onChanged={() => setVersion((value) => value + 1)} />
+      <GettingStarted key={`${tab}:${version}`} current={tab} onGo={setTab} onChanged={() => setVersion((value) => value + 1)} />
 
-          <div key={version} className="space-y-5">
-          {tab === 'roster' ? <RosterTab /> : null}
-          {tab === 'pay' ? (
-            <div className="space-y-8">
-              <Step title="1. Confirm the hours worked">
-                <AttendanceTab />
-              </Step>
-              <Step title="2. Approve and pay">
-                <PayrollTab />
-              </Step>
-            </div>
-          ) : null}
-          {tab === 'staff' ? (
-            <div className="space-y-8">
-              <StaffTab />
-              <Step title="Settings">
-                <TeamSettingsTab />
-              </Step>
-            </div>
-          ) : null}
-          </div>
-        </>
-      )}
+      <div key={version} className="space-y-5">
+      {tab === 'roster' ? <RosterTab /> : null}
+      {tab === 'pay' ? (
+        <div className="space-y-8">
+          <Step title="1. Confirm the hours worked">
+            <AttendanceTab />
+          </Step>
+          <Step title="2. Approve and pay">
+            <PayrollTab />
+          </Step>
+        </div>
+      ) : null}
+      {tab === 'staff' ? (
+        <div className="space-y-8">
+          <StaffTab />
+          <Step title="Settings">
+            <TeamSettingsTab />
+          </Step>
+        </div>
+      ) : null}
+      </div>
     </div>
   )
 }
