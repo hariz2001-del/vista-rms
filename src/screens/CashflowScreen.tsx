@@ -5,7 +5,7 @@ import { ExpenseReceipt } from '../components/ExpenseReceipt.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { moneyOutDescriber } from '../domain/cashflow.ts'
-import { balanceCheckRows, withRunningBalance } from '../domain/finance.ts'
+import { balanceCheckRows, gapWords, withRunningBalance } from '../domain/finance.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import { formatDate, formatRange, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
 import type { BalanceCheck, LedgerCategory, LedgerDirection, LedgerEntry } from '../domain/types.ts'
@@ -20,14 +20,6 @@ const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   LOAN_PROCEEDS: 'Loan received',
   LOAN_REPAYMENT: 'Loan repaid',
   RECONCILIATION_ADJUSTMENT: 'Reconciliation',
-}
-
-/** The gap between the bank and the books, said plainly. */
-function gapWords(gapSen: number): string {
-  if (gapSen === 0) return 'Tallies with the books'
-  return gapSen < 0
-    ? `${formatRinggit(-gapSen)} less in the bank than the books`
-    : `${formatRinggit(gapSen)} more in the bank than the books`
 }
 
 function gapTone(gapSen: number): string {

@@ -8,7 +8,7 @@ import { Money, Panel, SectionHeading, StatTile } from '../components/primitives
 import type { ScreenKey } from '../components/AppShell.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { formatRinggit } from '../domain/money.ts'
-import { liquidBalance } from '../domain/finance.ts'
+import { balanceCheckRows, gapWords, liquidBalance } from '../domain/finance.ts'
 import {
   attentionItems,
   formatDate,
@@ -42,6 +42,11 @@ export function OverviewScreen({
   const [notesOpen, setNotesOpen] = useState(false)
 
   const balanceSen = liquidBalance(store.ledger)
+  // The latest bank check, held up against the books as they stand now.
+  const latestCheck = useMemo(
+    () => balanceCheckRows(store.ledger, store.balanceChecks).at(-1) ?? null,
+    [store.ledger, store.balanceChecks],
+  )
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -115,13 +120,41 @@ export function OverviewScreen({
           sub="What customers paid, after discounts and cashier corrections."
           className="border-t-0 sm:border-r sm:border-r-line"
         />
-        <StatTile
-          hero
-          label="Money in the bank"
-          value={<Money sen={balanceSen} />}
-          sub="Every inflow and outflow to date, including capital and drawings."
-          className="border-t-line sm:border-t-0"
-        />
+        {latestCheck ? (
+          <StatTile
+            hero
+            label={`Money in the bank · ${formatDate(latestCheck.businessDate)}`}
+            value={<Money sen={latestCheck.actualSen} />}
+            tone={latestCheck.gapSen === 0 ? 'good' : 'warning'}
+            sub={
+              <>
+                <span className={`font-bold ${latestCheck.gapSen === 0 ? 'text-good' : 'text-warning'}`}>
+                  {gapWords(latestCheck.gapSen)}
+                </span>
+                {' '}· the books say {formatRinggit(balanceSen)}.{' '}
+                <button type="button" onClick={() => onNavigate('cashflow')} className="font-bold text-ink underline underline-offset-2">
+                  Bank checks
+                </button>
+              </>
+            }
+            className="border-t-line sm:border-t-0"
+          />
+        ) : (
+          <StatTile
+            hero
+            label="Money in the books"
+            value={<Money sen={balanceSen} />}
+            sub={
+              <>
+                Every inflow and outflow to date, including capital and drawings. Not checked against the bank yet.{' '}
+                <button type="button" onClick={() => onNavigate('cashflow')} className="font-bold text-ink underline underline-offset-2">
+                  Enter bank balance
+                </button>
+              </>
+            }
+            className="border-t-line sm:border-t-0"
+          />
+        )}
       </section>
 
       <section aria-label="Period activity" className="grid grid-cols-2 border border-line bg-surface lg:grid-cols-4">

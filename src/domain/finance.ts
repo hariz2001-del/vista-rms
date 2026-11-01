@@ -1,3 +1,4 @@
+import { formatRinggit } from './money.ts'
 import type {
   AccountSettings,
   BalanceCheck,
@@ -378,6 +379,14 @@ export function balanceCheckRows(
     previousGap = gapSen
     return { ...check, actualSen, bookSen, gapSen, changeSincePreviousSen }
   })
+}
+
+/** The gap between the bank and the books, said plainly. */
+export function gapWords(gapSen: number): string {
+  if (gapSen === 0) return 'Tallies with the books'
+  return gapSen < 0
+    ? `${formatRinggit(-gapSen)} less in the bank than the books`
+    : `${formatRinggit(gapSen)} more in the bank than the books`
 }
 
 export function liquidBalance(entries: readonly LedgerEntry[]): number {
