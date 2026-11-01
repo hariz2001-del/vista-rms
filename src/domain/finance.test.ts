@@ -561,29 +561,52 @@ describe('balanceCheckRows', () => {
     category: direction === 'MONEY_IN' ? 'REVENUE' : 'OPERATING_EXPENSE',
     description: 'x', brandId: null, orderId: null, shiftId: null,
   })
+  const check = (businessDate: string, bankSen: number, recordedAt = `${businessDate}T13:00:00Z`, cashSen = 0) =>
+    ({ id: `${businessDate}-${recordedAt}`, recordedAt, businessDate, bankSen, cashSen, note: null })
   const october = [line('2026-10-01', 'MONEY_IN', 300000), line('2026-10-20', 'MONEY_OUT', 100000)]
-  const firstCheck = { businessDate: '2026-11-01', bankSen: 150000, cashSen: 0, note: null }
+  const firstCheck = check('2026-11-01', 150000)
 
   it('shows what the books cannot explain: RM2,000 in the book, RM1,500 in the bank', () => {
     expect(balanceCheckRows(october, [firstCheck])).toEqual([
-      { ...firstCheck, actualSen: 150000, bookSen: 200000, gapSen: -50000, changeSincePreviousSen: null },
+      { ...firstCheck, actualSen: 150000, bookSen: 200000, gapSen: -50000, monthGapSen: 0, changeSincePreviousSen: null },
     ])
   })
 
-  it('closes the gap by itself when an old receipt is keyed in with its real date', () => {
+  it('closes the all-time gap by itself when an old receipt is keyed in with its real date', () => {
     const later = [...october, line('2026-10-15', 'MONEY_OUT', 5000)]
     expect(balanceCheckRows(later, [firstCheck])[0]!.gapSen).toBe(-45000)
   })
 
   it('counts cash on hand, ignores entries after the check, and pins new drift between checks', () => {
     const ledger = [...october, line('2026-11-02', 'MONEY_IN', 40000), line('2026-11-05', 'MONEY_OUT', 1000)]
-    const rows = balanceCheckRows(ledger, [
-      { businessDate: '2026-11-04', bankSen: 185000, cashSen: 5000, note: null },
-      firstCheck,
-    ])
+    const rows = balanceCheckRows(ledger, [check('2026-11-04', 185000, undefined, 5000), firstCheck])
     expect(rows.map((row) => [row.businessDate, row.bookSen, row.gapSen, row.changeSincePreviousSen])).toEqual([
       ['2026-11-01', 200000, -50000, null],
       ['2026-11-04', 240000, -50000, 0],
+    ])
+  })
+
+  it('starts each month from zero: from the final check of last month, or the first check of the month', () => {
+    const ledger = [...october, line('2026-11-10', 'MONEY_OUT', 2000)]
+    const rows = balanceCheckRows(ledger, [
+      firstCheck, // −RM500 brought from before; this month opens here
+      check('2026-11-20', 145000), // RM30 more missing this month
+      check('2026-11-30', 144000), // RM40 missing this month
+      check('2026-12-03', 142000), // December opens from 30 Nov: RM20 more missing
+    ])
+    expect(rows.map((row) => [row.businessDate, row.gapSen, row.monthGapSen])).toEqual([
+      ['2026-11-01', -50000, 0],
+      ['2026-11-20', -53000, -3000],
+      ['2026-11-30', -54000, -4000],
+      ['2026-12-03', -56000, -2000],
+    ])
+  })
+
+  it('keeps every check on the same day in the order they were keyed in, the newest last', () => {
+    const rows = balanceCheckRows(october, [check('2026-11-01', 151000, '2026-11-01T14:00:00Z'), firstCheck])
+    expect(rows.map((row) => [row.bankSen, row.monthGapSen, row.changeSincePreviousSen])).toEqual([
+      [150000, 0, null],
+      [151000, 1000, 1000],
     ])
   })
 })

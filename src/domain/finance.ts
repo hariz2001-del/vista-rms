@@ -345,8 +345,14 @@ export type BalanceCheckRow = BalanceCheck & {
   actualSen: number
   /** The cash book's balance after every entry dated on or before the check. */
   bookSen: number
-  /** actual − book. Negative: less in the bank than the books say. */
+  /** actual − book, all time. Negative: less in the bank than the books say. */
   gapSen: number
+  /**
+   * The gap built up this calendar month only: the gap now less the gap the
+   * month opened with — last month's final check, or this month's first check
+   * when last month had none. Each month starts from zero.
+   */
+  monthGapSen: number
   /** How much the gap moved since the check before; null for the first. */
   changeSincePreviousSen: number | null
 }
@@ -355,19 +361,23 @@ export type BalanceCheckRow = BalanceCheck & {
  * Each bank check held up against the cash book, oldest first.
  *
  * The book is read live, so keying in an old receipt with its real date lowers
- * the book at every later check and the gap closes by itself. The change since
- * the previous check pins a new mismatch to the days between the two, however
- * many days were skipped.
+ * the book at every later check and the all-time gap closes by itself. The
+ * change since the previous check pins a new mismatch to the days between the
+ * two, however many days were skipped.
  */
 export function balanceCheckRows(
   ledger: readonly LedgerEntry[],
   checks: readonly BalanceCheck[],
 ): BalanceCheckRow[] {
-  const sorted = checks.toSorted((a, b) => a.businessDate.localeCompare(b.businessDate))
+  const sorted = checks.toSorted(
+    (a, b) => a.businessDate.localeCompare(b.businessDate) || a.recordedAt.localeCompare(b.recordedAt),
+  )
   const entries = ledger.toSorted((a, b) => a.businessDate.localeCompare(b.businessDate))
   let index = 0
   let bookSen = 0
   let previousGap: number | null = null
+  let month = ''
+  let openingGap = 0
   return sorted.map((check) => {
     while (index < entries.length && entries[index]!.businessDate <= check.businessDate) {
       const entry = entries[index++]!
@@ -375,18 +385,22 @@ export function balanceCheckRows(
     }
     const actualSen = check.bankSen + check.cashSen
     const gapSen = actualSen - bookSen
+    if (check.businessDate.slice(0, 7) !== month) {
+      month = check.businessDate.slice(0, 7)
+      openingGap = previousGap ?? gapSen
+    }
     const changeSincePreviousSen = previousGap === null ? null : gapSen - previousGap
     previousGap = gapSen
-    return { ...check, actualSen, bookSen, gapSen, changeSincePreviousSen }
+    return { ...check, actualSen, bookSen, gapSen, monthGapSen: gapSen - openingGap, changeSincePreviousSen }
   })
 }
 
 /** The gap between the bank and the books, said plainly. */
-export function gapWords(gapSen: number): string {
-  if (gapSen === 0) return 'Tallies with the books'
+export function gapWords(gapSen: number, when = ''): string {
+  if (gapSen === 0) return `Tallies with the books${when}`
   return gapSen < 0
-    ? `${formatRinggit(-gapSen)} less in the bank than the books`
-    : `${formatRinggit(gapSen)} more in the bank than the books`
+    ? `${formatRinggit(-gapSen)} less in the bank than the books${when}`
+    : `${formatRinggit(gapSen)} more in the bank than the books${when}`
 }
 
 export function liquidBalance(entries: readonly LedgerEntry[]): number {

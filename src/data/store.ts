@@ -13,6 +13,7 @@ import type {
   PaymentSource,
   PeriodClosure,
   BalanceCheck,
+  NewBalanceCheck,
   Product,
   Promotion,
   SaleCorrection,
@@ -374,11 +375,12 @@ export function useDemoStore(_enabled = true) {
   }, [])
 
   /** What the bank held at the end of a day. Saving the same day again replaces it. */
-  const saveBalanceCheck = useCallback((input: BalanceCheck) => {
-    setBalanceChecks((current) => [...current.filter((check) => check.businessDate !== input.businessDate), input])
+  /** Every bank balance is kept; a second one on the same day does not replace the first. */
+  const saveBalanceCheck = useCallback((input: NewBalanceCheck) => {
+    setBalanceChecks((current) => [...current, { ...input, id: crypto.randomUUID(), recordedAt: new Date().toISOString() }])
   }, [])
-  const deleteBalanceCheck = useCallback((businessDate: string) => {
-    setBalanceChecks((current) => current.filter((check) => check.businessDate !== businessDate))
+  const deleteBalanceCheck = useCallback((id: string) => {
+    setBalanceChecks((current) => current.filter((check) => check.id !== id))
   }, [])
 
   const adjustBalance = useCallback((input: BalanceAdjustment) => {

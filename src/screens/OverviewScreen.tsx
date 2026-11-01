@@ -120,41 +120,36 @@ export function OverviewScreen({
           sub="What customers paid, after discounts and cashier corrections."
           className="border-t-0 sm:border-r sm:border-r-line"
         />
-        {latestCheck ? (
-          <StatTile
-            hero
-            label={`Money in the bank · ${formatDate(latestCheck.businessDate)}`}
-            value={<Money sen={latestCheck.actualSen} />}
-            tone={latestCheck.gapSen === 0 ? 'good' : 'warning'}
-            sub={
+        <StatTile
+          hero
+          label="Money in the books"
+          value={<Money sen={balanceSen} />}
+          tone={latestCheck ? (latestCheck.monthGapSen === 0 ? 'good' : 'warning') : 'default'}
+          sub={
+            latestCheck ? (
               <>
-                <span className={`font-bold ${latestCheck.gapSen === 0 ? 'text-good' : 'text-warning'}`}>
-                  {gapWords(latestCheck.gapSen)}
+                In the bank, keyed in for {formatDate(latestCheck.businessDate)}:{' '}
+                <span className="font-bold text-ink">{formatRinggit(latestCheck.actualSen)}</span>
+                <br />
+                <span className={`font-bold ${latestCheck.monthGapSen === 0 ? 'text-good' : 'text-warning'}`}>
+                  {gapWords(latestCheck.monthGapSen, ' this month')}
                 </span>
-                {' '}· the books say {formatRinggit(balanceSen)}.{' '}
+                .{' '}
                 <button type="button" onClick={() => onNavigate('cashflow')} className="font-bold text-ink underline underline-offset-2">
                   Bank checks
                 </button>
               </>
-            }
-            className="border-t-line sm:border-t-0"
-          />
-        ) : (
-          <StatTile
-            hero
-            label="Money in the books"
-            value={<Money sen={balanceSen} />}
-            sub={
+            ) : (
               <>
                 Every inflow and outflow to date, including capital and drawings. Not checked against the bank yet.{' '}
                 <button type="button" onClick={() => onNavigate('cashflow')} className="font-bold text-ink underline underline-offset-2">
                   Enter bank balance
                 </button>
               </>
-            }
-            className="border-t-line sm:border-t-0"
-          />
-        )}
+            )
+          }
+          className="border-t-line sm:border-t-0"
+        />
       </section>
 
       <section aria-label="Period activity" className="grid grid-cols-2 border border-line bg-surface lg:grid-cols-4">

@@ -11,6 +11,7 @@ import type {
   Partner,
   PeriodClosure,
   BalanceCheck,
+  NewBalanceCheck,
   Product,
   Promotion,
   SaleCorrection,
@@ -265,14 +266,14 @@ export function useApiStore(enabled: boolean): VistaStore {
   )
 
   const saveBalanceCheck = useCallback(
-    ({ businessDate, ...input }: BalanceCheck) => {
-      void perform('The bank balance', () => apiRequest('PUT', `/rms/balance-checks/${businessDate}`, input))
+    (input: NewBalanceCheck) => {
+      void perform('The bank balance', () => apiRequest('POST', '/rms/balance-checks', input))
     },
     [perform],
   )
   const deleteBalanceCheck = useCallback(
-    (businessDate: string) => {
-      void perform('Removing the bank balance', () => apiRequest('DELETE', `/rms/balance-checks/${businessDate}`))
+    (id: string) => {
+      void perform('Removing the bank balance', () => apiRequest('DELETE', `/rms/balance-checks/${id}`))
     },
     [perform],
   )

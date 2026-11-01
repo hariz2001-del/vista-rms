@@ -305,11 +305,17 @@ export type Promotion = {
  * book: the gap against it is computed live (see `balanceCheckRows`).
  */
 export type BalanceCheck = {
+  id: string
+  /** When it was keyed in. Several on one day are all kept; the newest counts. */
+  recordedAt: string
   businessDate: string
   bankSen: number
   cashSen: number
   note: string | null
 }
+
+/** A bank balance as keyed in, before the server gives it an id. */
+export type NewBalanceCheck = Omit<BalanceCheck, 'id' | 'recordedAt'>
 
 export type PeriodClosure = {
   id: string
