@@ -302,7 +302,7 @@ export type Promotion = {
 /**
  * What the bank (plus any cash on hand) actually held at the end of a business
  * day. One per day, entered when the owner chooses. It never moves the cash
- * book: the gap against it is computed live (see `balanceCheckRows`).
+ * book: what is short or over is worked out live (see `bankPosition`).
  */
 export type BalanceCheck = {
   id: string

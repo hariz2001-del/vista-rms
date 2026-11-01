@@ -5,7 +5,7 @@ import { ExpenseReceipt } from '../components/ExpenseReceipt.tsx'
 import { Badge, Money, Panel, SectionHeading } from '../components/primitives.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { moneyOutDescriber } from '../domain/cashflow.ts'
-import { balanceCheckRows, gapWords, withRunningBalance } from '../domain/finance.ts'
+import { bankPosition, shortWords, withRunningBalance } from '../domain/finance.ts'
 import { formatRinggit, parseRinggitToSen } from '../domain/money.ts'
 import { formatDate, formatRange, inRange, monthOf, type DateRange } from '../domain/selectors.ts'
 import type { LedgerCategory, LedgerDirection, LedgerEntry } from '../domain/types.ts'
@@ -98,12 +98,13 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
   /** A bank balance being keyed in. Each one is a new record; none is edited. */
   const [checking, setChecking] = useState(false)
 
-  // Every check against the book as it stands now, newest first.
-  const checkRows = useMemo(
-    () => balanceCheckRows(store.ledger, store.balanceChecks).toReversed(),
-    [store.ledger, store.balanceChecks],
+  // The bank from the last balance keyed in; every check, newest first.
+  const bank = useMemo(
+    () => bankPosition(store.ledger, store.balanceChecks, store.today),
+    [store.ledger, store.balanceChecks, store.today],
   )
-  const latestCheck = checkRows[0] ?? null
+  const checkRows = useMemo(() => bank.rows.toReversed(), [bank])
+  const latestCheck = bank.latest
   const daysSinceCheck = latestCheck ? daysBetween(latestCheck.businessDate, store.today) : null
 
   const brandName = (brandId: string | null) =>
@@ -234,12 +235,17 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
         <Panel>
           {latestCheck ? (
             <>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted">
-                In the bank · {formatDate(latestCheck.businessDate)}
+              <p className="text-xs font-bold uppercase tracking-wider text-muted">In the bank now</p>
+              <p className="mt-1 text-xl font-black tabular">{formatRinggit(bank.bankNowSen)}</p>
+              <p className="mt-1 text-xs font-semibold text-muted">
+                Keyed in {formatRinggit(latestCheck.actualSen)} · {formatRecordedAt(latestCheck.recordedAt)}
+                {bank.sinceLatestSen === 0 ? '' : ` · ${bank.sinceLatestSen > 0 ? '+' : '−'} ${formatRinggit(Math.abs(bank.sinceLatestSen))} since`}
               </p>
-              <p className="mt-1 text-xl font-black tabular">{formatRinggit(latestCheck.actualSen)}</p>
-              <p className={`mt-1 text-xs font-bold ${gapTone(latestCheck.monthGapSen)}`}>
-                {gapWords(latestCheck.monthGapSen, ' this month')}
+              <p className="mt-1 text-xs font-semibold text-muted">
+                Books this month: {formatRinggit(bank.booksMonthSen)}
+              </p>
+              <p className={`mt-1 text-xs font-bold ${gapTone(bank.monthShortSen)}`}>
+                {shortWords(bank.monthShortSen, ' this month')}
               </p>
               {daysSinceCheck !== null && daysSinceCheck > 1 ? (
                 <p className="mt-1 text-xs font-semibold text-muted">Last checked {daysSinceCheck} days ago</p>
@@ -415,18 +421,17 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
         <Panel>
           <SectionHeading
             title="Bank checks"
-            hint="Every bank balance keyed in, newest first. The gap starts from zero each month; All time keeps the older difference, which shrinks as old receipts are keyed in with their real date."
+            hint="Every bank balance keyed in, newest first. Each one is a fresh start: Should be is the check before plus every sale and expense since, so a short shows which days to look at. The month total starts from zero every month."
           />
           <div className="scrollbar-subtle -mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[46rem] text-sm">
+            <table className="w-full min-w-[40rem] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-muted">
                   <th className="py-2 text-left font-bold">Date</th>
-                  <th className="py-2 text-right font-bold">In the bank</th>
-                  <th className="py-2 text-right font-bold">Books say</th>
-                  <th className="py-2 text-right font-bold">This month</th>
-                  <th className="py-2 text-right font-bold">All time</th>
-                  <th className="py-2 pr-2 text-right font-bold">Since last check</th>
+                  <th className="py-2 text-right font-bold">Keyed in</th>
+                  <th className="py-2 text-right font-bold">Should be</th>
+                  <th className="py-2 text-right font-bold">Short / over</th>
+                  <th className="py-2 pr-2 text-right font-bold">Month so far</th>
                   <th className="py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -446,19 +451,14 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
                         <span className="block text-xs text-muted">incl. {formatRinggit(row.cashSen)} cash</span>
                       ) : null}
                     </td>
-                    <td className="py-2 text-right tabular">{formatRinggit(row.bookSen)}</td>
-                    <td className={`py-2 text-right font-bold tabular ${gapTone(row.monthGapSen)}`}>
-                      {row.monthGapSen === 0 ? 'Tallies' : formatRinggit(row.monthGapSen)}
-                    </td>
                     <td className="py-2 text-right tabular text-muted">
-                      {row.gapSen === 0 ? 'Tallies' : formatRinggit(row.gapSen)}
+                      {row.expectedSen === null ? 'Starting point' : formatRinggit(row.expectedSen)}
                     </td>
-                    <td className="py-2 pr-2 text-right tabular text-muted">
-                      {row.changeSincePreviousSen === null
-                        ? 'First check'
-                        : row.changeSincePreviousSen === 0
-                          ? 'No change'
-                          : formatRinggit(row.changeSincePreviousSen)}
+                    <td className={`py-2 text-right font-bold tabular ${row.shortSen === null ? 'text-muted' : gapTone(row.shortSen)}`}>
+                      {row.shortSen === null ? '—' : shortWords(row.shortSen)}
+                    </td>
+                    <td className={`py-2 pr-2 text-right tabular ${gapTone(row.monthShortSen)}`}>
+                      {shortWords(row.monthShortSen)}
                     </td>
                     <td className="py-2">
                       <div className="flex justify-end">
@@ -784,13 +784,13 @@ function BankBalanceDialog({ store, onClose }: { store: VistaStore; onClose: () 
   const canSave = bankSen !== null && bankSen >= 0 && cashSen !== null && cashSen >= 0 && Boolean(businessDate)
   const alreadyThatDay = store.balanceChecks.some((existing) => existing.businessDate === businessDate)
 
-  // The books at that date, and the gap this figure would show alongside the
-  // checks already kept (so this month's gap starts from the right place).
+  // What the bank should hold now, from the last check plus everything since,
+  // and how far this figure is from it.
   const preview = canSave && bankSen !== null && cashSen !== null
-    ? balanceCheckRows(store.ledger, [
+    ? bankPosition(store.ledger, [
         ...store.balanceChecks,
-        { id: 'preview', recordedAt: '9999', businessDate, bankSen, cashSen, note: null },
-      ]).find((row) => row.id === 'preview')!
+        { id: 'preview', recordedAt: new Date().toISOString(), businessDate, bankSen, cashSen, note: null },
+      ], store.today).rows.find((row) => row.id === 'preview')!
     : null
 
   function handleSubmit(event: FormEvent) {
@@ -805,7 +805,7 @@ function BankBalanceDialog({ store, onClose }: { store: VistaStore; onClose: () 
       <form onSubmit={handleSubmit} className="w-full max-w-lg border border-line bg-surface p-6 shadow-2xl">
         <h2 id="bank-balance-title" className="text-xl font-black">Bank balance</h2>
         <p className="mt-2 text-sm text-muted">
-          What the bank app shows at the end of the day. It is only compared with the books; nothing in the cash book changes.
+          What the bank app shows right now. It becomes the new starting point: sales and expenses from here on are added to it. Nothing in the cash book changes.
         </p>
         <div className="mt-5 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -829,13 +829,19 @@ function BankBalanceDialog({ store, onClose }: { store: VistaStore; onClose: () 
           </label>
           {preview ? (
             <div className="border border-line bg-canvas p-3 text-sm">
-              <p className="flex justify-between gap-3"><span className="text-muted">Books say at {formatDate(businessDate)}</span><span className="font-bold tabular">{formatRinggit(preview.bookSen)}</span></p>
-              <p className={`mt-1 font-bold ${gapTone(preview.monthGapSen)}`}>{gapWords(preview.monthGapSen, ' this month')}</p>
-              {preview.monthGapSen < 0 ? (
-                <p className="mt-1 text-xs font-semibold text-muted">Receipts or withdrawals not keyed in yet? Add them with their real date and this shrinks.</p>
-              ) : preview.monthGapSen > 0 ? (
-                <p className="mt-1 text-xs font-semibold text-muted">Sales or money in not recorded yet?</p>
-              ) : null}
+              {preview.expectedSen === null ? (
+                <p className="font-semibold text-muted">The first bank balance: everything is counted from here.</p>
+              ) : (
+                <>
+                  <p className="flex justify-between gap-3"><span className="text-muted">Should be, from the last check plus everything since</span><span className="font-bold tabular">{formatRinggit(preview.expectedSen)}</span></p>
+                  <p className={`mt-1 font-bold ${gapTone(preview.shortSen ?? 0)}`}>{shortWords(preview.shortSen ?? 0)}</p>
+                  {(preview.shortSen ?? 0) < 0 ? (
+                    <p className="mt-1 text-xs font-semibold text-muted">An expense, withdrawal or refund not keyed in since the last check?</p>
+                  ) : (preview.shortSen ?? 0) > 0 ? (
+                    <p className="mt-1 text-xs font-semibold text-muted">A sale or money in not recorded since the last check?</p>
+                  ) : null}
+                </>
+              )}
             </div>
           ) : null}
           {alreadyThatDay ? <p className="text-xs font-semibold text-muted">{formatDate(businessDate)} already has a bank balance. This one is kept as well, and the newest counts.</p> : null}

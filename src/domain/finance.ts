@@ -340,67 +340,102 @@ export function withRunningBalance(
   })
 }
 
-export type BalanceCheckRow = BalanceCheck & {
-  /** Bank plus cash on hand. */
+/**
+ * Did this cash-book entry happen after the bank balance was keyed in?
+ *
+ * A later business date always is. On the check's own date it is decided by
+ * the clock: a balance keyed in at 8:30 before opening has that night's sales
+ * added on top. An old receipt keyed in later with its real, earlier date is
+ * not — the bank already showed that money gone.
+ */
+export function isAfterCheck(entry: LedgerEntry, check: BalanceCheck): boolean {
+  return entry.businessDate > check.businessDate
+    || (entry.businessDate === check.businessDate && entry.entryAt > check.recordedAt)
+}
+
+function movementAfter(ledger: readonly LedgerEntry[], from: BalanceCheck, to?: BalanceCheck): number {
+  let sen = 0
+  for (const entry of ledger) {
+    if (!isAfterCheck(entry, from) || (to && isAfterCheck(entry, to))) continue
+    sen += entry.direction === 'MONEY_IN' ? entry.amountSen : -entry.amountSen
+  }
+  return sen
+}
+
+export type BankCheckRow = BalanceCheck & {
+  /** Bank plus cash on hand, as keyed in. */
   actualSen: number
-  /** The cash book's balance after every entry dated on or before the check. */
-  bookSen: number
-  /** actual − book, all time. Negative: less in the bank than the books say. */
-  gapSen: number
-  /**
-   * The gap built up this calendar month only: the gap now less the gap the
-   * month opened with — last month's final check, or this month's first check
-   * when last month had none. Each month starts from zero.
-   */
-  monthGapSen: number
-  /** How much the gap moved since the check before; null for the first. */
-  changeSincePreviousSen: number | null
+  /** The check before plus everything recorded since; null for the first. */
+  expectedSen: number | null
+  /** actual − expected: negative is short, positive is over; null for the first. */
+  shortSen: number | null
+  /** Short or over added up since the month began; resets every month. */
+  monthShortSen: number
+}
+
+export type BankPosition = {
+  /** Every check, oldest first. */
+  rows: BankCheckRow[]
+  latest: BankCheckRow | null
+  /** Sales and expenses recorded since the latest check. */
+  sinceLatestSen: number
+  /** The latest check plus everything since: what should be in the bank now. */
+  bankNowSen: number
+  /** Where the bank stood when this month began, plus this month's sales and expenses. */
+  booksMonthSen: number
+  /** bank − books: short or over so far this month. */
+  monthShortSen: number
 }
 
 /**
- * Each bank check held up against the cash book, oldest first.
- *
- * The book is read live, so keying in an old receipt with its real date lowers
- * the book at every later check and the all-time gap closes by itself. The
- * change since the previous check pins a new mismatch to the days between the
- * two, however many days were skipped.
+ * Each bank balance keyed in is a fresh starting point. Between two, the
+ * bank should move by exactly what the cash book recorded; whatever it did
+ * not is short (or over) for those days. The books start each month from the
+ * bank — last month's final check, or this month's first when there was none —
+ * so a messy month never follows the next one.
  */
-export function balanceCheckRows(
+export function bankPosition(
   ledger: readonly LedgerEntry[],
   checks: readonly BalanceCheck[],
-): BalanceCheckRow[] {
+  today: string,
+): BankPosition {
   const sorted = checks.toSorted(
     (a, b) => a.businessDate.localeCompare(b.businessDate) || a.recordedAt.localeCompare(b.recordedAt),
   )
-  const entries = ledger.toSorted((a, b) => a.businessDate.localeCompare(b.businessDate))
-  let index = 0
-  let bookSen = 0
-  let previousGap: number | null = null
+  const rows: BankCheckRow[] = []
   let month = ''
-  let openingGap = 0
-  return sorted.map((check) => {
-    while (index < entries.length && entries[index]!.businessDate <= check.businessDate) {
-      const entry = entries[index++]!
-      bookSen += entry.direction === 'MONEY_IN' ? entry.amountSen : -entry.amountSen
-    }
+  let monthShortSen = 0
+  for (const [index, check] of sorted.entries()) {
+    const previous = sorted[index - 1]
     const actualSen = check.bankSen + check.cashSen
-    const gapSen = actualSen - bookSen
+    const expectedSen = previous ? previous.bankSen + previous.cashSen + movementAfter(ledger, previous, check) : null
+    const shortSen = expectedSen === null ? null : actualSen - expectedSen
     if (check.businessDate.slice(0, 7) !== month) {
       month = check.businessDate.slice(0, 7)
-      openingGap = previousGap ?? gapSen
+      monthShortSen = 0
     }
-    const changeSincePreviousSen = previousGap === null ? null : gapSen - previousGap
-    previousGap = gapSen
-    return { ...check, actualSen, bookSen, gapSen, monthGapSen: gapSen - openingGap, changeSincePreviousSen }
-  })
+    monthShortSen += shortSen ?? 0
+    rows.push({ ...check, actualSen, expectedSen, shortSen, monthShortSen })
+  }
+
+  const latest = rows.at(-1) ?? null
+  if (!latest) return { rows, latest, sinceLatestSen: 0, bankNowSen: 0, booksMonthSen: 0, monthShortSen: 0 }
+
+  const sinceLatestSen = movementAfter(ledger, latest)
+  const bankNowSen = latest.actualSen + sinceLatestSen
+  const thisMonth = today.slice(0, 7)
+  // The month opens from the last check before it began, else its own first.
+  const opening = rows.findLast((row) => row.businessDate.slice(0, 7) < thisMonth)
+    ?? rows.find((row) => row.businessDate.slice(0, 7) === thisMonth)
+    ?? latest
+  const booksMonthSen = opening.actualSen + movementAfter(ledger, opening)
+  return { rows, latest, sinceLatestSen, bankNowSen, booksMonthSen, monthShortSen: bankNowSen - booksMonthSen }
 }
 
-/** The gap between the bank and the books, said plainly. */
-export function gapWords(gapSen: number, when = ''): string {
-  if (gapSen === 0) return `Tallies with the books${when}`
-  return gapSen < 0
-    ? `${formatRinggit(-gapSen)} less in the bank than the books${when}`
-    : `${formatRinggit(gapSen)} more in the bank than the books${when}`
+/** Short or over, said plainly. */
+export function shortWords(sen: number, when = ''): string {
+  if (sen === 0) return `Tallies${when}`
+  return sen < 0 ? `${formatRinggit(-sen)} short${when}` : `${formatRinggit(sen)} over${when}`
 }
 
 export function liquidBalance(entries: readonly LedgerEntry[]): number {

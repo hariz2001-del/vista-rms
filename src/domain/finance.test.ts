@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  balanceCheckRows,
+  bankPosition,
   liquidBalance,
   openingDeficitFor,
   orderNetByBrand,
@@ -554,59 +554,69 @@ describe('cashflow ledger', () => {
   })
 })
 
-describe('balanceCheckRows', () => {
+describe('bankPosition', () => {
   let id = 0
-  const line = (businessDate: string, direction: 'MONEY_IN' | 'MONEY_OUT', amountSen: number): LedgerEntry => ({
-    id: ++id, businessDate, entryAt: `${businessDate}T12:00:00Z`, direction, amountSen,
+  const line = (businessDate: string, direction: 'MONEY_IN' | 'MONEY_OUT', amountSen: number, entryAt = `${businessDate}T14:00:00Z`): LedgerEntry => ({
+    id: ++id, businessDate, entryAt, direction, amountSen,
     category: direction === 'MONEY_IN' ? 'REVENUE' : 'OPERATING_EXPENSE',
     description: 'x', brandId: null, orderId: null, shiftId: null,
   })
-  const check = (businessDate: string, bankSen: number, recordedAt = `${businessDate}T13:00:00Z`, cashSen = 0) =>
+  // Keyed in at 08:30 Malaysia time, before opening.
+  const check = (businessDate: string, bankSen: number, recordedAt = `${businessDate}T00:30:00Z`, cashSen = 0) =>
     ({ id: `${businessDate}-${recordedAt}`, recordedAt, businessDate, bankSen, cashSen, note: null })
+  // October's books say RM2,000; the bank says RM1,500.
   const october = [line('2026-10-01', 'MONEY_IN', 300000), line('2026-10-20', 'MONEY_OUT', 100000)]
-  const firstCheck = check('2026-11-01', 150000)
 
-  it('shows what the books cannot explain: RM2,000 in the book, RM1,500 in the bank', () => {
-    expect(balanceCheckRows(october, [firstCheck])).toEqual([
-      { ...firstCheck, actualSen: 150000, bookSen: 200000, gapSen: -50000, monthGapSen: 0, changeSincePreviousSen: null },
-    ])
+  it('starts from the bank, not the books: the old difference is not carried', () => {
+    const position = bankPosition(october, [check('2026-11-01', 150000)], '2026-11-01')
+    expect(position).toMatchObject({ bankNowSen: 150000, booksMonthSen: 150000, monthShortSen: 0, sinceLatestSen: 0 })
+    expect(position.latest).toMatchObject({ expectedSen: null, shortSen: null, monthShortSen: 0 })
   })
 
-  it('closes the all-time gap by itself when an old receipt is keyed in with its real date', () => {
-    const later = [...october, line('2026-10-15', 'MONEY_OUT', 5000)]
-    expect(balanceCheckRows(later, [firstCheck])[0]!.gapSen).toBe(-45000)
+  it('adds that night’s sales on top of a balance keyed in before opening', () => {
+    const ledger = [...october, line('2026-11-01', 'MONEY_IN', 40000), line('2026-11-01', 'MONEY_OUT', 5000)]
+    expect(bankPosition(ledger, [check('2026-11-01', 150000)], '2026-11-01'))
+      .toMatchObject({ sinceLatestSen: 35000, bankNowSen: 185000, booksMonthSen: 185000, monthShortSen: 0 })
   })
 
-  it('counts cash on hand, ignores entries after the check, and pins new drift between checks', () => {
-    const ledger = [...october, line('2026-11-02', 'MONEY_IN', 40000), line('2026-11-05', 'MONEY_OUT', 1000)]
-    const rows = balanceCheckRows(ledger, [check('2026-11-04', 185000, undefined, 5000), firstCheck])
-    expect(rows.map((row) => [row.businessDate, row.bookSen, row.gapSen, row.changeSincePreviousSen])).toEqual([
-      ['2026-11-01', 200000, -50000, null],
-      ['2026-11-04', 240000, -50000, 0],
-    ])
+  it('ignores an old receipt keyed in later with its real date', () => {
+    const ledger = [...october, line('2026-10-15', 'MONEY_OUT', 5000, '2026-11-01T12:00:00Z')]
+    expect(bankPosition(ledger, [check('2026-11-01', 150000)], '2026-11-01').bankNowSen).toBe(150000)
   })
 
-  it('starts each month from zero: from the final check of last month, or the first check of the month', () => {
-    const ledger = [...october, line('2026-11-10', 'MONEY_OUT', 2000)]
-    const rows = balanceCheckRows(ledger, [
-      firstCheck, // −RM500 brought from before; this month opens here
-      check('2026-11-20', 145000), // RM30 more missing this month
-      check('2026-11-30', 144000), // RM40 missing this month
-      check('2026-12-03', 142000), // December opens from 30 Nov: RM20 more missing
+  it('finds what is short between two checks and adds it up for the month', () => {
+    const ledger = [...october, line('2026-11-01', 'MONEY_IN', 40000), line('2026-11-02', 'MONEY_IN', 30000)]
+    const position = bankPosition(ledger, [
+      check('2026-11-01', 150000),
+      check('2026-11-02', 188000), // expected 190000: RM20 short
+      check('2026-11-03', 217000), // expected 218000: RM10 short
+    ], '2026-11-03')
+    expect(position.rows.map((row) => [row.expectedSen, row.shortSen, row.monthShortSen])).toEqual([
+      [null, null, 0],
+      [190000, -2000, -2000],
+      [218000, -1000, -3000],
     ])
-    expect(rows.map((row) => [row.businessDate, row.gapSen, row.monthGapSen])).toEqual([
-      ['2026-11-01', -50000, 0],
-      ['2026-11-20', -53000, -3000],
-      ['2026-11-30', -54000, -4000],
-      ['2026-12-03', -56000, -2000],
-    ])
+    expect(position).toMatchObject({ bankNowSen: 217000, booksMonthSen: 220000, monthShortSen: -3000 })
   })
 
-  it('keeps every check on the same day in the order they were keyed in, the newest last', () => {
-    const rows = balanceCheckRows(october, [check('2026-11-01', 151000, '2026-11-01T14:00:00Z'), firstCheck])
-    expect(rows.map((row) => [row.bankSen, row.monthGapSen, row.changeSincePreviousSen])).toEqual([
-      [150000, 0, null],
-      [151000, 1000, 1000],
-    ])
+  it('starts each month again from the last check before it', () => {
+    const ledger = [...october, line('2026-11-30', 'MONEY_IN', 10000), line('2026-12-02', 'MONEY_IN', 20000)]
+    const checks = [check('2026-11-01', 150000), check('2026-11-29', 149000), check('2026-12-03', 177000)]
+    // 1 Dec, nothing keyed in yet: December starts clean.
+    expect(bankPosition(ledger.slice(0, -1), checks.slice(0, 2), '2026-12-01')).toMatchObject({ booksMonthSen: 159000, monthShortSen: 0 })
+    // 3 Dec: expected 149000 + 10000 + 20000 = 179000, so RM20 short — December's own.
+    const position = bankPosition(ledger, checks, '2026-12-03')
+    expect(position.rows.map((row) => row.monthShortSen)).toEqual([0, -1000, -2000])
+    expect(position).toMatchObject({ bankNowSen: 177000, booksMonthSen: 179000, monthShortSen: -2000 })
+  })
+
+  it('keeps every check on the same day, the newest last', () => {
+    const position = bankPosition(october, [check('2026-11-01', 151000, '2026-11-01T02:00:00Z'), check('2026-11-01', 150000)], '2026-11-01')
+    expect(position.rows.map((row) => [row.bankSen, row.shortSen])).toEqual([[150000, null], [151000, 1000]])
+    expect(position.bankNowSen).toBe(151000)
+  })
+
+  it('counts cash on hand with the bank', () => {
+    expect(bankPosition(october, [check('2026-11-01', 150000, undefined, 2000)], '2026-11-01').bankNowSen).toBe(152000)
   })
 })

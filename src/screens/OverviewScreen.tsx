@@ -8,7 +8,7 @@ import { Money, Panel, SectionHeading, StatTile } from '../components/primitives
 import type { ScreenKey } from '../components/AppShell.tsx'
 import type { VistaStore } from '../data/store.ts'
 import { formatRinggit } from '../domain/money.ts'
-import { balanceCheckRows, gapWords, liquidBalance } from '../domain/finance.ts'
+import { bankPosition, liquidBalance, shortWords } from '../domain/finance.ts'
 import {
   attentionItems,
   formatDate,
@@ -42,10 +42,10 @@ export function OverviewScreen({
   const [notesOpen, setNotesOpen] = useState(false)
 
   const balanceSen = liquidBalance(store.ledger)
-  // The latest bank check, held up against the books as they stand now.
-  const latestCheck = useMemo(
-    () => balanceCheckRows(store.ledger, store.balanceChecks).at(-1) ?? null,
-    [store.ledger, store.balanceChecks],
+  // The bank from the last balance keyed in, and this month's books beside it.
+  const bank = useMemo(
+    () => bankPosition(store.ledger, store.balanceChecks, store.today),
+    [store.ledger, store.balanceChecks, store.today],
   )
 
   return (
@@ -122,17 +122,19 @@ export function OverviewScreen({
         />
         <StatTile
           hero
-          label="Money in the books"
-          value={<Money sen={balanceSen} />}
-          tone={latestCheck ? (latestCheck.monthGapSen === 0 ? 'good' : 'warning') : 'default'}
+          label={bank.latest ? 'Money in the books · this month' : 'Money in the books'}
+          value={<Money sen={bank.latest ? bank.booksMonthSen : balanceSen} />}
+          tone={bank.latest ? (bank.monthShortSen === 0 ? 'good' : 'warning') : 'default'}
           sub={
-            latestCheck ? (
+            bank.latest ? (
               <>
-                In the bank, keyed in for {formatDate(latestCheck.businessDate)}:{' '}
-                <span className="font-bold text-ink">{formatRinggit(latestCheck.actualSen)}</span>
+                In the bank now:{' '}
+                <span className="font-bold text-ink">{formatRinggit(bank.bankNowSen)}</span>
+                {' '}(keyed in {formatRinggit(bank.latest.actualSen)} for {formatDate(bank.latest.businessDate)}
+                {bank.sinceLatestSen === 0 ? '' : `, ${bank.sinceLatestSen > 0 ? '+' : '−'} ${formatRinggit(Math.abs(bank.sinceLatestSen))} since`})
                 <br />
-                <span className={`font-bold ${latestCheck.monthGapSen === 0 ? 'text-good' : 'text-warning'}`}>
-                  {gapWords(latestCheck.monthGapSen, ' this month')}
+                <span className={`font-bold ${bank.monthShortSen === 0 ? 'text-good' : 'text-warning'}`}>
+                  {shortWords(bank.monthShortSen, ' this month')}
                 </span>
                 .{' '}
                 <button type="button" onClick={() => onNavigate('cashflow')} className="font-bold text-ink underline underline-offset-2">
