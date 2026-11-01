@@ -10,6 +10,7 @@ import type {
   Order,
   Partner,
   PeriodClosure,
+  BalanceCheck,
   Product,
   Promotion,
   SaleCorrection,
@@ -50,6 +51,8 @@ type Snapshot = {
   ledger: LedgerEntry[]
   expenses: Expense[]
   closures: PeriodClosure[]
+  /** Absent from an older API. */
+  balanceChecks?: BalanceCheck[]
   terminal: TerminalStatus
   counterSessions: CounterSession[]
   /** Absent from an older API. */
@@ -261,6 +264,19 @@ export function useApiStore(enabled: boolean): VistaStore {
     [perform],
   )
 
+  const saveBalanceCheck = useCallback(
+    ({ businessDate, ...input }: BalanceCheck) => {
+      void perform('The bank balance', () => apiRequest('PUT', `/rms/balance-checks/${businessDate}`, input))
+    },
+    [perform],
+  )
+  const deleteBalanceCheck = useCallback(
+    (businessDate: string) => {
+      void perform('Removing the bank balance', () => apiRequest('DELETE', `/rms/balance-checks/${businessDate}`))
+    },
+    [perform],
+  )
+
   const adjustBalance = useCallback(
     (input: BalanceAdjustment) => {
       void perform('The adjustment', () => apiRequest('POST', '/rms/ledger/adjustments', input))
@@ -406,6 +422,9 @@ export function useApiStore(enabled: boolean): VistaStore {
       shifts: snapshot?.shifts ?? [],
       expenses: snapshot?.expenses ?? [],
       ledger: snapshot?.ledger ?? [],
+      balanceChecks: snapshot?.balanceChecks ?? [],
+      saveBalanceCheck,
+      deleteBalanceCheck,
       partners: snapshot?.partners ?? [],
       counterSessions: snapshot?.counterSessions ?? [],
       renamePartner,
@@ -454,6 +473,8 @@ export function useApiStore(enabled: boolean): VistaStore {
       recordDrawing,
       updateDrawing,
       deleteDrawing,
+      saveBalanceCheck,
+      deleteBalanceCheck,
       settleAdvance,
       toggleSoldOut,
       updatePrice,

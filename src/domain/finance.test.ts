@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  balanceCheckRows,
   liquidBalance,
   openingDeficitFor,
   orderNetByBrand,
@@ -550,5 +551,39 @@ describe('cashflow ledger', () => {
     ]
     const rows = withRunningBalance(entries)
     expect(rows.at(-1)?.balanceSen).toBe(liquidBalance(entries))
+  })
+})
+
+describe('balanceCheckRows', () => {
+  let id = 0
+  const line = (businessDate: string, direction: 'MONEY_IN' | 'MONEY_OUT', amountSen: number): LedgerEntry => ({
+    id: ++id, businessDate, entryAt: `${businessDate}T12:00:00Z`, direction, amountSen,
+    category: direction === 'MONEY_IN' ? 'REVENUE' : 'OPERATING_EXPENSE',
+    description: 'x', brandId: null, orderId: null, shiftId: null,
+  })
+  const october = [line('2026-10-01', 'MONEY_IN', 300000), line('2026-10-20', 'MONEY_OUT', 100000)]
+  const firstCheck = { businessDate: '2026-11-01', bankSen: 150000, cashSen: 0, note: null }
+
+  it('shows what the books cannot explain: RM2,000 in the book, RM1,500 in the bank', () => {
+    expect(balanceCheckRows(october, [firstCheck])).toEqual([
+      { ...firstCheck, actualSen: 150000, bookSen: 200000, gapSen: -50000, changeSincePreviousSen: null },
+    ])
+  })
+
+  it('closes the gap by itself when an old receipt is keyed in with its real date', () => {
+    const later = [...october, line('2026-10-15', 'MONEY_OUT', 5000)]
+    expect(balanceCheckRows(later, [firstCheck])[0]!.gapSen).toBe(-45000)
+  })
+
+  it('counts cash on hand, ignores entries after the check, and pins new drift between checks', () => {
+    const ledger = [...october, line('2026-11-02', 'MONEY_IN', 40000), line('2026-11-05', 'MONEY_OUT', 1000)]
+    const rows = balanceCheckRows(ledger, [
+      { businessDate: '2026-11-04', bankSen: 185000, cashSen: 5000, note: null },
+      firstCheck,
+    ])
+    expect(rows.map((row) => [row.businessDate, row.bookSen, row.gapSen, row.changeSincePreviousSen])).toEqual([
+      ['2026-11-01', 200000, -50000, null],
+      ['2026-11-04', 240000, -50000, 0],
+    ])
   })
 })

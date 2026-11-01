@@ -1,5 +1,6 @@
 import type {
   AccountSettings,
+  BalanceCheck,
   Expense,
   LedgerEntry,
   Order,
@@ -335,6 +336,47 @@ export function withRunningBalance(
     const moneyOutSen = entry.direction === 'MONEY_OUT' ? entry.amountSen : 0
     balanceSen += moneyInSen - moneyOutSen
     return { ...entry, moneyInSen, moneyOutSen, balanceSen }
+  })
+}
+
+export type BalanceCheckRow = BalanceCheck & {
+  /** Bank plus cash on hand. */
+  actualSen: number
+  /** The cash book's balance after every entry dated on or before the check. */
+  bookSen: number
+  /** actual − book. Negative: less in the bank than the books say. */
+  gapSen: number
+  /** How much the gap moved since the check before; null for the first. */
+  changeSincePreviousSen: number | null
+}
+
+/**
+ * Each bank check held up against the cash book, oldest first.
+ *
+ * The book is read live, so keying in an old receipt with its real date lowers
+ * the book at every later check and the gap closes by itself. The change since
+ * the previous check pins a new mismatch to the days between the two, however
+ * many days were skipped.
+ */
+export function balanceCheckRows(
+  ledger: readonly LedgerEntry[],
+  checks: readonly BalanceCheck[],
+): BalanceCheckRow[] {
+  const sorted = checks.toSorted((a, b) => a.businessDate.localeCompare(b.businessDate))
+  const entries = ledger.toSorted((a, b) => a.businessDate.localeCompare(b.businessDate))
+  let index = 0
+  let bookSen = 0
+  let previousGap: number | null = null
+  return sorted.map((check) => {
+    while (index < entries.length && entries[index]!.businessDate <= check.businessDate) {
+      const entry = entries[index++]!
+      bookSen += entry.direction === 'MONEY_IN' ? entry.amountSen : -entry.amountSen
+    }
+    const actualSen = check.bankSen + check.cashSen
+    const gapSen = actualSen - bookSen
+    const changeSincePreviousSen = previousGap === null ? null : gapSen - previousGap
+    previousGap = gapSen
+    return { ...check, actualSen, bookSen, gapSen, changeSincePreviousSen }
   })
 }
 

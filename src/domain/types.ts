@@ -299,6 +299,18 @@ export type Promotion = {
   isActive: boolean
 }
 
+/**
+ * What the bank (plus any cash on hand) actually held at the end of a business
+ * day. One per day, entered when the owner chooses. It never moves the cash
+ * book: the gap against it is computed live (see `balanceCheckRows`).
+ */
+export type BalanceCheck = {
+  businessDate: string
+  bankSen: number
+  cashSen: number
+  note: string | null
+}
+
 export type PeriodClosure = {
   id: string
   startDate: string

@@ -12,6 +12,7 @@ import type {
   PaymentMethod,
   PaymentSource,
   PeriodClosure,
+  BalanceCheck,
   Product,
   Promotion,
   SaleCorrection,
@@ -184,6 +185,7 @@ export function useDemoStore(_enabled = true) {
   const [closures, setClosures] = useState<PeriodClosure[]>(restored?.closures ?? HISTORY.closures)
   const [terminal, setTerminal] = useState<TerminalStatus>(restored?.terminal ?? HISTORY.terminal)
   const [partners, setPartners] = useState<Partner[]>(restored?.partners ?? HISTORY.partners)
+  const [balanceChecks, setBalanceChecks] = useState<BalanceCheck[]>([])
   const [counterSessions, setCounterSessions] = useState<CounterSession[]>(
     () =>
       restored?.counterSessions ?? [
@@ -369,6 +371,14 @@ export function useDemoStore(_enabled = true) {
   }, [drawingLine])
   const deleteDrawing = useCallback((id: number) => {
     setLedger((current) => current.filter((entry) => !(entry.id === id && entry.category === 'OWNER_DRAWING')))
+  }, [])
+
+  /** What the bank held at the end of a day. Saving the same day again replaces it. */
+  const saveBalanceCheck = useCallback((input: BalanceCheck) => {
+    setBalanceChecks((current) => [...current.filter((check) => check.businessDate !== input.businessDate), input])
+  }, [])
+  const deleteBalanceCheck = useCallback((businessDate: string) => {
+    setBalanceChecks((current) => current.filter((check) => check.businessDate !== businessDate))
   }, [])
 
   const adjustBalance = useCallback((input: BalanceAdjustment) => {
@@ -570,6 +580,9 @@ export function useDemoStore(_enabled = true) {
       shifts,
       expenses,
       ledger,
+      balanceChecks,
+      saveBalanceCheck,
+      deleteBalanceCheck,
       partners,
       counterSessions,
       renamePartner,
@@ -612,6 +625,9 @@ export function useDemoStore(_enabled = true) {
       shifts,
       expenses,
       ledger,
+      balanceChecks,
+      saveBalanceCheck,
+      deleteBalanceCheck,
       closures,
       terminal,
       partners,
