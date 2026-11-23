@@ -26,4 +26,7 @@ async function start(root: HTMLElement) {
   )
 }
 
+// iOS ignores maximum-scale for pinch; stop the gesture so the app never zooms.
+document.addEventListener('gesturestart', (event) => event.preventDefault())
+
 void start(rootElement)

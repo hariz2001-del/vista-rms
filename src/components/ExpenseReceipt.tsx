@@ -45,10 +45,10 @@ export function ExpenseReceipt({ expense }: { expense: Expense }) {
     } finally { if (requestId.current === current) setLoading(false) }
   }
 
-  if (!expense.receiptDocumentId) return expense.receiptUrl ? <a href={expense.receiptUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1 text-xs font-bold text-ink underline"><ImageIcon aria-hidden="true" className="size-4" />View receipt</a> : null
+  if (!expense.receiptDocumentId) return expense.receiptUrl ? <a href={expense.receiptUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 text-xs font-bold text-ink underline md:min-h-9"><ImageIcon aria-hidden="true" className="size-4" />View receipt</a> : null
   return (
     <>
-      <button type="button" onClick={() => { void load() }} className="inline-flex min-h-9 items-center gap-1 text-xs font-bold text-ink hover:underline" aria-label={`View receipt for ${expense.description}`}><ImageIcon aria-hidden="true" className="size-4" />View receipt</button>
+      <button type="button" onClick={() => { void load() }} className="inline-flex min-h-11 items-center gap-1 text-xs font-bold text-ink hover:underline md:min-h-9" aria-label={`View receipt for ${expense.description}`}><ImageIcon aria-hidden="true" className="size-4" />View receipt</button>
       <dialog ref={dialog} onCancel={close} onClose={() => { if (opened) close() }} className="m-auto w-[min(95vw,52rem)] max-h-[92vh] overflow-y-auto border border-line bg-canvas p-4 text-ink shadow-xl backdrop:bg-black/50">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div><h2 className="text-lg font-bold">{expense.vendor ?? 'Receipt'}</h2><p className="text-sm text-muted">{expense.description} · {expense.businessDate}</p></div>

@@ -57,7 +57,7 @@ function NewWeek({ existing, onCreated }: { existing: WeekSummary[]; onCreated: 
     <form onSubmit={submit} className="space-y-2 border border-dashed border-line bg-surface p-3">
       <label className="block">
         <span className="vista-field-label">New roster week</span>
-        <select value={weekStart} onChange={(event) => setWeekStart(event.target.value)} className="vista-control mt-1 w-full px-2">
+        <select value={weekStart} onChange={(event) => setWeekStart(event.target.value)} className="vista-control mt-1 w-full min-w-0 px-2">
           {options.map((monday) => (
             <option key={monday} value={monday}>
               Week of {dayName(monday, 'long')}
@@ -67,7 +67,7 @@ function NewWeek({ existing, onCreated }: { existing: WeekSummary[]; onCreated: 
       </label>
       <label className="block">
         <span className="vista-field-label">Shifts</span>
-        <select value={copyFrom} onChange={(event) => setCopyFrom(event.target.value)} className="vista-control mt-1 w-full px-2">
+        <select value={copyFrom} onChange={(event) => setCopyFrom(event.target.value)} className="vista-control mt-1 w-full min-w-0 px-2">
           {existing.slice(0, 6).map((week) => (
             <option key={week.id} value={week.id}>
               Same shifts as {week.label}
@@ -992,7 +992,7 @@ export function RosterTab() {
   const current = selected ?? weeks[0]?.id ?? null
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
       <aside className="space-y-2">
         <NewWeek
           // Starts afresh whenever the list changes, so it never offers a week just taken.

@@ -226,6 +226,19 @@ main h1 {
  * win over the compact desktop sizes; a mouse keeps the compact layout.
  */
 @media (max-width: 1023px) and (pointer: coarse) {
+  /* 16px or more: below that, Safari zooms in on every tapped field and stays zoomed. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  main a.vista-button-primary,
+  main a.vista-button-secondary,
+  main a[data-touch] {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
   /* :not() lifts these above the shared .vista-button / .vista-control sizes. */
   main button:not([data-compact]),
   main select:not([data-compact]),
@@ -253,5 +266,23 @@ main h1 {
   .page-kicker,
   .vista-field-label {
     font-size: 0.75rem;
+  }
+}
+
+/*
+ * Feels like an app, not a web page: no double-tap zoom, no pull-to-refresh
+ * bounce, and a grid column never grows wider than the screen because of a
+ * wide child (a table scrolls inside its own box instead).
+ */
+html {
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+/* In the base layer so any min-w-* utility on a grid child still wins. */
+@layer base {
+  .grid > * {
+    min-width: 0;
   }
 }

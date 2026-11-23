@@ -66,7 +66,7 @@ function Payslip({ staffId, period, onChanged }: { staffId: string; period: { st
               <th className="py-2 pr-3">Clock out</th>
               <th className="py-2 pr-3">Paid hours</th>
               <th className="py-2 pr-3">Work type</th>
-              <th className="py-2 pr-3 text-right">Rate</th>
+              <th className="hidden py-2 pr-3 text-right sm:table-cell">Rate</th>
               <th className="py-2 text-right">Amount</th>
             </tr>
           </thead>
@@ -92,7 +92,7 @@ function Payslip({ staffId, period, onChanged }: { staffId: string; period: { st
                       </td>
                     </>
                   )}
-                  <td className="py-2 pr-3 text-right tabular">{line.kind === 'ADJUSTMENT' ? '' : formatRinggit(line.rateSenPerHour)}</td>
+                  <td className="hidden py-2 pr-3 text-right tabular sm:table-cell">{line.kind === 'ADJUSTMENT' ? '' : formatRinggit(line.rateSenPerHour)}</td>
                   <td className="py-2 text-right font-bold tabular">{line.kind === 'ADJUSTMENT' ? formatSignedRinggit(line.amountSen) : formatRinggit(line.amountSen)}</td>
                 </tr>
               )
@@ -227,7 +227,7 @@ function Summary({ period, onPick, picked }: { period: { start: string; end: str
             <tr className="border-b border-line font-mono text-[0.62rem] uppercase tracking-[0.07em] text-muted">
               <th className="px-3 py-2">Staff</th>
               {types.map((type) => (
-                <th key={type} className="px-3 py-2 text-right">
+                <th key={type} className="hidden px-3 py-2 text-right sm:table-cell">
                   {type}
                 </th>
               ))}
@@ -250,7 +250,7 @@ function Summary({ period, onPick, picked }: { period: { start: string; end: str
                   {row.problems.length > 0 || row.pendingCount > 0 ? <span className="ml-1 text-xs text-warning">●</span> : null}
                 </td>
                 {types.map((type) => (
-                  <td key={type} className="px-3 py-2 text-right tabular">
+                  <td key={type} className="hidden px-3 py-2 text-right tabular sm:table-cell">
                     {row.minutesByType[type] ? hoursText(row.minutesByType[type]) : '—'}
                   </td>
                 ))}
@@ -264,9 +264,13 @@ function Summary({ period, onPick, picked }: { period: { start: string; end: str
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-ink">
-              <td className="px-3 py-2 font-bold" colSpan={types.length + 2}>
+              <td className="px-3 py-2 font-bold">
                 Period total · still to pay {formatRinggit(unpaid)}
               </td>
+              {types.map((type) => (
+                <td key={type} className="hidden sm:table-cell" />
+              ))}
+              <td />
               <td className="px-3 py-2 text-right font-bold tabular">{formatRinggit(total)}</td>
               <td />
             </tr>

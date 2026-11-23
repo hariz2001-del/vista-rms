@@ -107,11 +107,14 @@ export function StatusBanner({ store }: { store: VistaStore }) {
 
   return (
     <div
-      className={`flex min-h-11 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm sm:px-6 ${TONE[state.kind]}`}
+      className={`flex min-h-11 shrink-0 items-center gap-x-3 px-4 py-2 text-sm sm:px-6 ${TONE[state.kind]}`}
       role="status"
       aria-live="polite"
     >
-      <Content state={state} />
+      {/* The status wraps; the actions button stays on the same line, not alone on a second one. */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        <Content state={state} />
+      </div>
 
       {state.kind === 'COUNTER_OPEN' ? (
         <div className="relative ml-auto" ref={menuRef}>
@@ -120,13 +123,13 @@ export function StatusBanner({ store }: { store: VistaStore }) {
             onClick={() => setMenuOpen((current) => !current)}
             aria-label="Counter actions"
             aria-expanded={menuOpen}
-            className="grid size-8 place-items-center rounded-sm hover:bg-black/15"
+            className="grid size-11 shrink-0 place-items-center rounded-sm hover:bg-black/15 md:size-8"
           >
             <MoreVertical aria-hidden="true" className="size-4" />
           </button>
 
           {menuOpen ? (
-            <div className="absolute right-0 top-9 z-40 w-72 border border-line bg-surface p-2 text-ink shadow-xl">
+            <div className="absolute right-0 top-full z-40 w-72 border border-line bg-surface p-2 text-ink shadow-xl">
               <button
                 type="button"
                 onClick={() => {

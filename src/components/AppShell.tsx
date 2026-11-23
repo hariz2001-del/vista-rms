@@ -7,6 +7,7 @@ import {
   Receipt,
   ReceiptText,
   Contact,
+  Megaphone,
   Settings as SettingsIcon,
   UtensilsCrossed,
   Users,
@@ -24,6 +25,7 @@ export type ScreenKey =
   | 'menu'
   | 'stock'
   | 'team'
+  | 'campaigns'
   | 'settings'
 
 /**
@@ -50,6 +52,7 @@ export const NAV: Array<{
   { key: 'menu', label: 'Menu', mobileLabel: 'Menu', icon: UtensilsCrossed },
   { key: 'stock', label: 'Stock', mobileLabel: 'Stock', icon: Boxes },
   { key: 'team', label: 'Team', mobileLabel: 'Team', icon: Contact },
+  { key: 'campaigns', label: 'Campaigns', mobileLabel: 'Campaigns', icon: Megaphone },
   { key: 'settings', label: 'Settings', mobileLabel: 'Setup', icon: SettingsIcon },
 ]
 

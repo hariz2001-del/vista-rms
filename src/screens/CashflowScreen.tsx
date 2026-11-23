@@ -20,6 +20,7 @@ const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   LOAN_PROCEEDS: 'Loan received',
   LOAN_REPAYMENT: 'Loan repaid',
   RECONCILIATION_ADJUSTMENT: 'Reconciliation',
+  BANK_INTEREST: 'Bank interest',
 }
 
 function gapTone(gapSen: number): string {
@@ -323,7 +324,40 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
           </label>
         </div>
 
-        <div className="scrollbar-subtle -mx-4 overflow-x-auto px-4">
+        {/* Phones: one line per entry — what it was and the money, then the details. */}
+        <ul className="divide-y divide-slate-100 md:hidden" aria-label="Cash book">
+          {rows.map((row) => {
+            const out = flow === 'OUT' ? describeOut(row) : null
+            const inflow = row.moneyInSen > 0
+            return (
+              <li key={`${row.id}-${row.description}`} className="py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 font-semibold text-ink">{row.description}</p>
+                  <span className="shrink-0 font-black">
+                    {inflow ? <Money sen={row.moneyInSen} tone="in" /> : <Money sen={-row.moneyOutSen} tone="out" />}
+                  </span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                  <span className="font-semibold">{formatDate(row.businessDate)}</span>
+                  <Badge tone={row.category === 'RECONCILIATION_ADJUSTMENT' ? 'warning' : row.category === 'REFUND' ? 'info' : 'neutral'}>
+                    {CATEGORY_LABEL[row.category]}
+                  </Badge>
+                  {out ? <span className="font-bold">{out.source} · {out.forWho}</span> : flow === 'OUT' ? null : <span className="font-bold">{brandName(row.brandId)}</span>}
+                  <span className="ml-auto tabular">Bal {formatRinggit(row.balanceSen)}</span>
+                </div>
+                {row.category === 'OWNER_DRAWING' && row.id > 0 ? (
+                  <div className="mt-1 flex gap-1">
+                    <button type="button" onClick={() => setWithdrawal({ entry: row })} aria-label={`Change ${row.description}`} className="grid size-11 place-items-center text-muted hover:bg-canvas hover:text-ink"><Pencil aria-hidden="true" className="size-4" /></button>
+                    <button type="button" onClick={() => { if (window.confirm(`Remove "${row.description}" (${formatRinggit(row.amountSen)})? The money goes back into the balance.`)) store.deleteDrawing(row.id) }} aria-label={`Remove ${row.description}`} className="grid size-11 place-items-center text-muted hover:bg-canvas hover:text-serious"><Trash2 aria-hidden="true" className="size-4" /></button>
+                  </div>
+                ) : null}
+                {row.direction === 'MONEY_OUT' && (row.category === 'OPERATING_EXPENSE' || row.category === 'CAPITAL_ASSET') ? <div className="mt-1 flex flex-wrap gap-2">{(receiptsByEntry.get(`${row.businessDate}|${row.amountSen}|${row.description}`) ?? []).map((expense) => <ExpenseReceipt key={expense.id} expense={expense} />)}</div> : null}
+              </li>
+            )
+          })}
+        </ul>
+
+        <div className="scrollbar-subtle -mx-4 hidden overflow-x-auto px-4 md:block">
           <table className="w-full min-w-[46rem] text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-muted">
@@ -424,14 +458,14 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
             hint="Every bank balance keyed in, newest first. Each one is a fresh start: Should be is the check before plus every sale and expense since, so a short shows which days to look at. The month total starts from zero every month."
           />
           <div className="scrollbar-subtle -mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[40rem] text-sm">
+            <table className="w-full text-sm sm:min-w-[40rem]">
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-muted">
                   <th className="py-2 text-left font-bold">Date</th>
                   <th className="py-2 text-right font-bold">Keyed in</th>
-                  <th className="py-2 text-right font-bold">Should be</th>
+                  <th className="hidden py-2 text-right font-bold sm:table-cell">Should be</th>
                   <th className="py-2 text-right font-bold">Short / over</th>
-                  <th className="py-2 pr-2 text-right font-bold">Month so far</th>
+                  <th className="hidden py-2 pr-2 text-right font-bold sm:table-cell">Month so far</th>
                   <th className="py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -451,18 +485,18 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
                         <span className="block text-xs text-muted">incl. {formatRinggit(row.cashSen)} cash</span>
                       ) : null}
                     </td>
-                    <td className="py-2 text-right tabular text-muted">
+                    <td className="hidden py-2 text-right tabular text-muted sm:table-cell">
                       {row.expectedSen === null ? 'Starting point' : formatRinggit(row.expectedSen)}
                     </td>
                     <td className={`py-2 text-right font-bold tabular ${row.shortSen === null ? 'text-muted' : gapTone(row.shortSen)}`}>
                       {row.shortSen === null ? '—' : shortWords(row.shortSen)}
                     </td>
-                    <td className={`py-2 pr-2 text-right tabular ${gapTone(row.monthShortSen)}`}>
+                    <td className={`hidden py-2 pr-2 text-right tabular sm:table-cell ${gapTone(row.monthShortSen)}`}>
                       {shortWords(row.monthShortSen)}
                     </td>
                     <td className="py-2">
                       <div className="flex justify-end">
-                        <button type="button" onClick={() => { if (window.confirm(`Remove this bank balance (${formatRinggit(row.actualSen)}, ${formatDate(row.businessDate)})? Only for a typo — the cash book does not change.`)) store.deleteBalanceCheck(row.id) }} aria-label={`Remove the bank balance for ${formatDate(row.businessDate)}`} className="grid size-8 place-items-center text-muted hover:bg-canvas hover:text-serious"><Trash2 aria-hidden="true" className="size-3.5" /></button>
+                        <button type="button" onClick={() => { if (window.confirm(`Remove this bank balance (${formatRinggit(row.actualSen)}, ${formatDate(row.businessDate)})? Only for a typo — the cash book does not change.`)) store.deleteBalanceCheck(row.id) }} aria-label={`Remove the bank balance for ${formatDate(row.businessDate)}`} className="grid size-11 place-items-center text-muted hover:bg-canvas hover:text-serious md:size-8"><Trash2 aria-hidden="true" className="size-3.5" /></button>
                       </div>
                     </td>
                   </tr>
@@ -480,7 +514,7 @@ export function CashflowScreen({ store }: { store: VistaStore }) {
             hint="What each shift recorded when it closed. Check it against the bank statement; if something is off, use Adjust balance."
           />
           <div className="scrollbar-subtle -mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[28rem] text-sm">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-muted">
                   <th className="py-2 text-left font-bold">Date</th>

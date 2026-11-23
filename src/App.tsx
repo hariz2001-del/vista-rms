@@ -23,6 +23,7 @@ import { ReceiptsScreen } from './screens/ReceiptsScreen.tsx'
 import { SettingsScreen } from './screens/SettingsScreen.tsx'
 import { SettlementScreen } from './screens/SettlementScreen.tsx'
 import { TeamScreen } from './screens/TeamScreen.tsx'
+import { CampaignsScreen } from './screens/CampaignsScreen.tsx'
 import { SignInScreen } from './screens/SignInScreen.tsx'
 
 /**
@@ -196,6 +197,7 @@ export default function App() {
       {screen === 'menu' ? <MenuScreen store={store} /> : null}
       {screen === 'stock' ? <StockScreen store={store} /> : null}
       {screen === 'team' ? <TeamScreen /> : null}
+      {screen === 'campaigns' ? <CampaignsScreen store={store} /> : null}
       {screen === 'settings' ? <SettingsScreen store={store} /> : null}
     </AppShell>
   )

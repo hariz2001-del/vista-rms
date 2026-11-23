@@ -190,12 +190,13 @@ export function SalesPerformanceBreakdown({
   )
 
   // The name column stays put while a table scrolls sideways.
-  const plainHeader = (label: string, align: 'left' | 'right' = 'left', sticky = false) => (
+  // `wide`: a detail column, hidden on a phone so the numbers that matter fit.
+  const plainHeader = (label: string, align: 'left' | 'right' = 'left', sticky = false, wide = false) => (
     <th
       scope="col"
       className={`px-3 py-2 font-mono text-[0.65rem] font-bold uppercase tracking-[0.08em] text-muted ${
         align === 'right' ? 'text-right' : 'text-left'
-      } ${sticky ? 'sticky left-0 z-[1] bg-surface' : ''}`}
+      } ${sticky ? 'sticky left-0 z-[1] bg-surface' : ''} ${wide ? 'hidden sm:table-cell' : ''}`}
     >
       {label}
     </th>
@@ -266,16 +267,16 @@ export function SalesPerformanceBreakdown({
       {dimension === 'product' && rowCount > 0 ? (
         <>
           <div className="scrollbar-subtle mt-2 overflow-x-auto">
-          <table className="w-full min-w-[46rem] text-sm [&_td:not(:first-child)]:whitespace-nowrap">
+          <table className="w-full text-sm sm:min-w-[46rem] [&_td:not(:first-child)]:whitespace-nowrap">
             <thead className="border-b border-line">
               <tr>
                 {plainHeader('Product', 'left', true)}
-                {plainHeader('Brand')}
+                {plainHeader('Brand', 'left', false, true)}
                 {sortHeader('quantity', 'Qty sold')}
-                {plainHeader('Base', 'right')}
-                {plainHeader('Add-ons', 'right')}
+                {plainHeader('Base', 'right', false, true)}
+                {plainHeader('Add-ons', 'right', false, true)}
                 {sortHeader('net', 'Net sales')}
-                {plainHeader('% of brand', 'right')}
+                {plainHeader('% of brand', 'right', false, true)}
               </tr>
             </thead>
             <tbody>
@@ -292,12 +293,12 @@ export function SalesPerformanceBreakdown({
                           </span>
                         </ExpandButton>
                       </td>
-                      <td className="px-3 py-2.5 text-xs font-bold">{brandTag(row.brandId)}</td>
+                      <td className="hidden px-3 py-2.5 text-xs font-bold sm:table-cell">{brandTag(row.brandId)}</td>
                       <td className="px-3 py-2.5 text-right font-mono font-bold tabular">{row.quantity}</td>
-                      <td className="px-3 py-2.5 text-right font-mono tabular">
+                      <td className="hidden px-3 py-2.5 text-right font-mono tabular sm:table-cell">
                         <Money sen={row.baseSen} tone="muted" />
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono tabular">
+                      <td className="hidden px-3 py-2.5 text-right font-mono tabular sm:table-cell">
                         <Money sen={row.modifierSen} tone="muted" />
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono font-bold tabular">
@@ -308,7 +309,7 @@ export function SalesPerformanceBreakdown({
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="hidden px-3 py-2.5 text-right sm:table-cell">
                         <ShareBar value={shareOfBrand(row.netSen, brandNet(row.brandId))} colour={brandsById.get(row.brandId)?.chartColour} />
                       </td>
                     </tr>
@@ -332,7 +333,7 @@ export function SalesPerformanceBreakdown({
       {/* By category */}
       {dimension === 'category' && rowCount > 0 ? (
         <div className="scrollbar-subtle mt-2 overflow-x-auto">
-        <table className="w-full min-w-[30rem] text-sm [&_td:not(:first-child)]:whitespace-nowrap">
+        <table className="w-full text-sm sm:min-w-[30rem] [&_td:not(:first-child)]:whitespace-nowrap">
           <thead className="border-b border-line">
             <tr>
               {plainHeader('Category')}
@@ -419,25 +420,27 @@ export function SalesPerformanceBreakdown({
       {dimension === 'modifier' && rowCount > 0 ? (
         <>
           <div className="scrollbar-subtle mt-2 overflow-x-auto">
-          <table className="w-full min-w-[46rem] text-sm [&_td:not(:first-child)]:whitespace-nowrap">
+          <table className="w-full text-sm sm:min-w-[46rem] [&_td:not(:first-child)]:whitespace-nowrap">
             <thead className="border-b border-line">
               <tr>
                 {plainHeader('Add-on', 'left', true)}
-                {plainHeader('Brand')}
-                {plainHeader('Chosen on')}
+                {plainHeader('Brand', 'left', false, true)}
+                {plainHeader('Chosen on', 'left', false, true)}
                 {sortHeader('quantity', 'Times chosen')}
-                {plainHeader('Unit price', 'right')}
+                {plainHeader('Unit price', 'right', false, true)}
                 {sortHeader('net', 'Add-on revenue')}
               </tr>
             </thead>
             {modifierGroups.map((group) => (
               <tbody key={group.groupName}>
                 <tr className="border-t-2 border-line bg-canvas/60">
-                  <th scope="rowgroup" colSpan={3} className="px-3 py-2 text-left text-xs font-black uppercase tracking-[0.06em] text-ink">
+                  <th scope="rowgroup" className="px-3 py-2 text-left text-xs font-black uppercase tracking-[0.06em] text-ink">
                     {group.groupName}
                   </th>
+                  <td className="hidden sm:table-cell" />
+                  <td className="hidden sm:table-cell" />
                   <td className="px-3 py-2 text-right font-mono text-xs font-bold tabular text-muted">{group.count}</td>
-                  <td />
+                  <td className="hidden sm:table-cell" />
                   <td className="px-3 py-2 text-right font-mono text-xs font-bold tabular text-muted">
                     {formatRinggit(group.revenueSen)}
                   </td>
@@ -447,12 +450,12 @@ export function SalesPerformanceBreakdown({
                     <td className="sticky left-0 z-[1] bg-surface py-2.5 pl-6 pr-3 font-bold text-ink">
                       {row.name}
                     </td>
-                    <td className="px-3 py-2.5 text-xs font-bold">{brandTag(row.brandId)}</td>
-                    <td className="px-3 py-2.5 text-xs text-muted" title={row.productNames.join(', ')}>
+                    <td className="hidden px-3 py-2.5 text-xs font-bold sm:table-cell">{brandTag(row.brandId)}</td>
+                    <td className="hidden px-3 py-2.5 text-xs text-muted sm:table-cell" title={row.productNames.join(', ')}>
                       {productsLabel(row)}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono font-bold tabular">{row.count}</td>
-                    <td className="px-3 py-2.5 text-right font-mono tabular text-muted">{priceLabel(row)}</td>
+                    <td className="hidden px-3 py-2.5 text-right font-mono tabular text-muted sm:table-cell">{priceLabel(row)}</td>
                     <td className="px-3 py-2.5 text-right font-mono tabular">
                       {row.maxPriceSen === 0 ? (
                         <span className="inline-flex items-center gap-2">

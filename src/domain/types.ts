@@ -149,6 +149,7 @@ export type LedgerCategory =
   | 'LOAN_PROCEEDS'
   | 'LOAN_REPAYMENT'
   | 'RECONCILIATION_ADJUSTMENT'
+  | 'BANK_INTEREST'
 
 export type LedgerEntry = {
   id: number

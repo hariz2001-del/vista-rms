@@ -339,13 +339,16 @@ export function StaffTab() {
       {data.staff.length === 0 ? (
         <EmptyState title="No staff yet" hint="Add someone above. They get a PIN to sign in at team.vistahub.my." />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
           <div className="overflow-x-auto border border-line bg-surface">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-line">
                   {['Name', 'Staff ID', 'PIN', 'Usual rate', 'Status'].map((heading) => (
-                    <th key={heading} className="px-3 py-2 font-mono text-[0.66rem] font-bold uppercase tracking-[0.07em] text-muted">
+                    <th
+                      key={heading}
+                      className={`px-3 py-2 font-mono text-[0.66rem] font-bold uppercase tracking-[0.07em] text-muted ${heading === 'Staff ID' || heading === 'Usual rate' ? 'hidden sm:table-cell' : ''}`}
+                    >
                       {heading}
                     </th>
                   ))}
@@ -365,11 +368,11 @@ export function StaffTab() {
                         {staff.name}
                       </button>
                     </td>
-                    <td className="px-3 py-2.5 font-mono text-xs">{staff.staffCode}</td>
+                    <td className="hidden px-3 py-2.5 font-mono text-xs sm:table-cell">{staff.staffCode}</td>
                     <td className="px-3 py-1">
                       {staff.hasPin ? <PinCell staffId={staff.id} version={staff.pinSetAt} /> : <span className="text-xs text-muted">—</span>}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="hidden px-3 py-2.5 sm:table-cell">
                       {staff.defaultWorkTypeId ? workTypeName(staff.defaultWorkTypeId) : <Badge tone="warning">No rate — pick one</Badge>}
                     </td>
                     <td className="px-3 py-2.5">
